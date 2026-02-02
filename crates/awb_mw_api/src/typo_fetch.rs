@@ -77,7 +77,14 @@ pub async fn fetch_typo_fix_rules(
     }
 
     // Extract wikitext
-    let wikitext = page["revisions"][0]["slots"]["main"]["content"]
+    let rev = page["revisions"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .ok_or_else(|| MwApiError::ApiError {
+            code: "norevisions".into(),
+            info: "No revisions returned for page".into(),
+        })?;
+    let wikitext = rev["slots"]["main"]["content"]
         .as_str()
         .ok_or_else(|| MwApiError::ApiError {
             code: "nocontent".into(),
