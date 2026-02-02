@@ -93,6 +93,30 @@ anyhow = "1"
 # Testing
 proptest = "1"
 wiremock = "0.6"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[package]
+name = "awb-rs-workspace"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+awb_domain = { path = "crates/awb_domain" }
+awb_engine = { path = "crates/awb_engine" }
+awb_security = { path = "crates/awb_security" }
+awb_telemetry = { path = "crates/awb_telemetry" }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = "3"
+
+[[bench]]
+name = "transform_bench"
+harness = false
 
 [profile.release]
 lto = true

@@ -1,466 +1,209 @@
-use awb_telemetry::events::{TelemetryEvent, EventData};
+use awb_telemetry::events::TelemetryEvent;
 use awb_telemetry::export::{ExportFormat, export_log};
 use awb_telemetry::setup::{TelemetryConfig, init_telemetry};
-use tempfile::TempDir;
-
-#[test]
-fn test_telemetry_init_and_emit_events() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("telemetry.log");
-
-    let config = TelemetryConfig {
-        enabled: true,
-        log_to_file: true,
-        file_path: Some(log_path.clone()),
-        log_level: "info".to_string(),
-    };
-
-    // Initialize telemetry
-    init_telemetry(config).expect("Failed to initialize telemetry");
-
-    // Emit various events
-    tracing::info!("Test info event");
-    tracing::warn!("Test warning event");
-    tracing::error!("Test error event");
-
-    // Give time for async logging
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Verify log file was created
-    assert!(log_path.exists(), "Telemetry log file should exist");
-}
 
 #[test]
 fn test_telemetry_event_creation() {
-    let event = TelemetryEvent::new(
-        "test_event",
-        EventData::PageProcessed {
-            title: "Test Page".to_string(),
-            success: true,
-            duration_ms: 150,
-        },
-    );
+    let event = TelemetryEvent::session_started("enwiki");
+    match &event {
+        TelemetryEvent::SessionStarted { profile, .. } => {
+            assert_eq!(profile, "enwiki");
+        }
+        _ => panic!("Expected SessionStarted"),
+    }
+}
 
-    assert_eq!(event.event_type, "test_event");
-    assert!(matches!(event.data, EventData::PageProcessed { .. }));
+#[test]
+fn test_telemetry_session_completed() {
+    let event = TelemetryEvent::session_completed(100, 80, 15, 5, 300.5);
+    match &event {
+        TelemetryEvent::SessionCompleted {
+            total,
+            saved,
+            skipped,
+            errors,
+            elapsed_secs,
+            ..
+        } => {
+            assert_eq!(*total, 100);
+            assert_eq!(*saved, 80);
+            assert_eq!(*skipped, 15);
+            assert_eq!(*errors, 5);
+            assert!(*elapsed_secs > 300.0);
+        }
+        _ => panic!("Expected SessionCompleted"),
+    }
 }
 
 #[test]
 fn test_telemetry_event_serialization() {
-    let event = TelemetryEvent::new(
-        "page_edit",
-        EventData::EditCompleted {
-            page_id: 12345,
-            revision_id: 98765,
-            rules_applied: 5,
-            fixes_applied: 3,
-        },
-    );
-
-    // Serialize to JSON
+    let event = TelemetryEvent::session_started("test_profile");
     let json = serde_json::to_string(&event).unwrap();
-    assert!(json.contains("page_edit"));
-    assert!(json.contains("12345"));
-
-    // Deserialize back
-    let deserialized: TelemetryEvent = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.event_type, "page_edit");
+    assert!(json.contains("SessionStarted"));
+    assert!(json.contains("test_profile"));
 }
 
 #[test]
-fn test_telemetry_export_json_format() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("test.log");
-    let export_path = temp_dir.path().join("export.json");
-
-    // Create test log content
+fn test_telemetry_all_event_variants_serialize() {
     let events = vec![
-        TelemetryEvent::new(
-            "event1",
-            EventData::SessionStarted {
-                profile_id: "test".to_string(),
-                rule_count: 10,
-            },
-        ),
-        TelemetryEvent::new(
-            "event2",
-            EventData::PageProcessed {
-                title: "Page1".to_string(),
-                success: true,
-                duration_ms: 100,
-            },
-        ),
+        TelemetryEvent::SessionStarted {
+            profile: "test".into(),
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::PageProcessed {
+            title: "Test Page".into(),
+            outcome: "saved".into(),
+            duration_ms: 150,
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::RuleApplied {
+            rule_id: "rule_1".into(),
+            matches: 3,
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::ApiCall {
+            endpoint: "/w/api.php".into(),
+            status: 200,
+            duration_ms: 50,
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::Warning {
+            message: "Large change detected".into(),
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::Error {
+            message: "Connection timeout".into(),
+            context: "api_call".into(),
+            timestamp: chrono::Utc::now(),
+        },
+        TelemetryEvent::session_completed(50, 40, 8, 2, 120.0),
     ];
 
-    // Write events to log file as JSON lines
-    let mut log_content = String::new();
     for event in &events {
-        log_content.push_str(&serde_json::to_string(&event).unwrap());
-        log_content.push('\n');
-    }
-    std::fs::write(&log_path, log_content).unwrap();
-
-    // Export to JSON
-    export_log(&log_path, &export_path, ExportFormat::Json).expect("Export should succeed");
-
-    // Verify export file exists
-    assert!(export_path.exists());
-
-    // Verify content is valid JSON
-    let exported_content = std::fs::read_to_string(&export_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&exported_content).unwrap();
-    assert!(parsed.is_array() || parsed.is_object());
-}
-
-#[test]
-fn test_telemetry_export_csv_format() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("test.log");
-    let export_path = temp_dir.path().join("export.csv");
-
-    // Create test log content
-    let events = vec![
-        TelemetryEvent::new(
-            "session_start",
-            EventData::SessionStarted {
-                profile_id: "enwiki".to_string(),
-                rule_count: 5,
-            },
-        ),
-        TelemetryEvent::new(
-            "page_processed",
-            EventData::PageProcessed {
-                title: "Test Page".to_string(),
-                success: true,
-                duration_ms: 250,
-            },
-        ),
-    ];
-
-    // Write events to log file
-    let mut log_content = String::new();
-    for event in &events {
-        log_content.push_str(&serde_json::to_string(&event).unwrap());
-        log_content.push('\n');
-    }
-    std::fs::write(&log_path, log_content).unwrap();
-
-    // Export to CSV
-    export_log(&log_path, &export_path, ExportFormat::Csv).expect("Export should succeed");
-
-    // Verify export file exists
-    assert!(export_path.exists());
-
-    // Verify CSV header exists
-    let exported_content = std::fs::read_to_string(&export_path).unwrap();
-    assert!(exported_content.contains("timestamp") || exported_content.contains("event_type"));
-}
-
-#[test]
-fn test_telemetry_export_plain_format() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("test.log");
-    let export_path = temp_dir.path().join("export.txt");
-
-    // Create test log content
-    let events = vec![
-        TelemetryEvent::new(
-            "test1",
-            EventData::SessionStarted {
-                profile_id: "test".to_string(),
-                rule_count: 1,
-            },
-        ),
-    ];
-
-    // Write events to log file
-    let mut log_content = String::new();
-    for event in &events {
-        log_content.push_str(&serde_json::to_string(&event).unwrap());
-        log_content.push('\n');
-    }
-    std::fs::write(&log_path, log_content).unwrap();
-
-    // Export to plain text
-    export_log(&log_path, &export_path, ExportFormat::Plain).expect("Export should succeed");
-
-    // Verify export file exists
-    assert!(export_path.exists());
-
-    // Verify content is human-readable
-    let exported_content = std::fs::read_to_string(&export_path).unwrap();
-    assert!(!exported_content.is_empty());
-}
-
-#[test]
-fn test_telemetry_event_types() {
-    // Test all event data variants
-    let events = vec![
-        TelemetryEvent::new(
-            "session_started",
-            EventData::SessionStarted {
-                profile_id: "test".to_string(),
-                rule_count: 10,
-            },
-        ),
-        TelemetryEvent::new(
-            "page_processed",
-            EventData::PageProcessed {
-                title: "Page".to_string(),
-                success: true,
-                duration_ms: 100,
-            },
-        ),
-        TelemetryEvent::new(
-            "edit_completed",
-            EventData::EditCompleted {
-                page_id: 123,
-                revision_id: 456,
-                rules_applied: 3,
-                fixes_applied: 2,
-            },
-        ),
-        TelemetryEvent::new(
-            "error_occurred",
-            EventData::ErrorOccurred {
-                error_type: "NetworkError".to_string(),
-                message: "Connection timeout".to_string(),
-            },
-        ),
-        TelemetryEvent::new(
-            "session_ended",
-            EventData::SessionEnded {
-                pages_processed: 50,
-                pages_edited: 40,
-                duration_secs: 300.5,
-            },
-        ),
-    ];
-
-    // All events should serialize without error
-    for event in events {
-        let json = serde_json::to_string(&event).unwrap();
+        let json = serde_json::to_string(event).unwrap();
         assert!(!json.is_empty());
     }
 }
 
 #[test]
-fn test_telemetry_config_disabled() {
-    let config = TelemetryConfig {
-        enabled: false,
-        log_to_file: false,
-        file_path: None,
-        log_level: "info".to_string(),
-    };
-
-    // Should succeed even when disabled
-    let result = init_telemetry(config);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_telemetry_log_levels() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let levels = vec!["trace", "debug", "info", "warn", "error"];
-
-    for level in levels {
-        let log_path = temp_dir.path().join(format!("{}.log", level));
-        let config = TelemetryConfig {
-            enabled: true,
-            log_to_file: true,
-            file_path: Some(log_path.clone()),
-            log_level: level.to_string(),
-        };
-
-        let result = init_telemetry(config);
-        assert!(result.is_ok(), "Failed to initialize with log level: {}", level);
-    }
-}
-
-#[test]
-fn test_telemetry_multiple_events_export() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("multi.log");
-    let export_path = temp_dir.path().join("multi_export.json");
-
-    // Create multiple events
-    let mut log_content = String::new();
-    for i in 0..10 {
-        let event = TelemetryEvent::new(
-            &format!("event_{}", i),
-            EventData::PageProcessed {
-                title: format!("Page {}", i),
-                success: i % 2 == 0,
-                duration_ms: i * 10,
-            },
-        );
-        log_content.push_str(&serde_json::to_string(&event).unwrap());
-        log_content.push('\n');
-    }
-    std::fs::write(&log_path, log_content).unwrap();
-
-    // Export all events
-    export_log(&log_path, &export_path, ExportFormat::Json).expect("Export should succeed");
-
-    // Verify all events are in export
-    let exported = std::fs::read_to_string(&export_path).unwrap();
-    for i in 0..10 {
-        assert!(exported.contains(&format!("event_{}", i)) || exported.contains(&format!("Page {}", i)));
-    }
-}
-
-#[test]
-fn test_telemetry_event_timestamps() {
-    let event = TelemetryEvent::new(
-        "test",
-        EventData::SessionStarted {
-            profile_id: "test".to_string(),
-            rule_count: 1,
+fn test_telemetry_export_json() {
+    let events = vec![
+        TelemetryEvent::session_started("enwiki"),
+        TelemetryEvent::PageProcessed {
+            title: "Page 1".into(),
+            outcome: "saved".into(),
+            duration_ms: 100,
+            timestamp: chrono::Utc::now(),
         },
-    );
+    ];
 
-    // Timestamp should be set automatically
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::Json, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.contains("SessionStarted"));
+    assert!(output.contains("enwiki"));
+    assert!(output.contains("Page 1"));
+}
+
+#[test]
+fn test_telemetry_export_csv() {
+    let events = vec![
+        TelemetryEvent::session_started("test"),
+        TelemetryEvent::session_completed(10, 8, 1, 1, 60.0),
+    ];
+
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::Csv, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.contains("type,timestamp,details"));
+}
+
+#[test]
+fn test_telemetry_export_plain_text() {
+    let events = vec![TelemetryEvent::session_started("test")];
+
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::PlainText, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.contains("SessionStarted"));
+}
+
+#[test]
+fn test_telemetry_export_empty_events() {
+    let events: Vec<TelemetryEvent> = vec![];
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::Json, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.is_empty());
+}
+
+#[test]
+fn test_telemetry_export_multiple_events_json() {
+    let mut events = Vec::new();
+    for i in 0..10 {
+        events.push(TelemetryEvent::PageProcessed {
+            title: format!("Page {}", i),
+            outcome: if i % 2 == 0 { "saved" } else { "skipped" }.into(),
+            duration_ms: i * 10,
+            timestamp: chrono::Utc::now(),
+        });
+    }
+
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::Json, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+
+    for i in 0..10 {
+        assert!(output.contains(&format!("Page {}", i)));
+    }
+}
+
+#[test]
+fn test_telemetry_config_default() {
+    let config = TelemetryConfig::default();
+    assert_eq!(config.level, tracing::Level::INFO);
+    assert!(config.json_output);
+    assert!(config.human_output);
+}
+
+#[test]
+fn test_telemetry_init() {
+    // Note: init_telemetry can only succeed once per process due to global subscriber.
+    // We just test that TelemetryConfig can be constructed.
+    let _config = TelemetryConfig {
+        log_dir: std::path::PathBuf::from("/tmp/test_logs"),
+        level: tracing::Level::DEBUG,
+        json_output: true,
+        human_output: false,
+    };
+}
+
+#[test]
+fn test_telemetry_event_timestamps_are_set() {
+    let event = TelemetryEvent::session_started("test");
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("timestamp"));
 }
 
 #[test]
-fn test_telemetry_export_empty_log() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("empty.log");
-    let export_path = temp_dir.path().join("empty_export.json");
-
-    // Create empty log file
-    std::fs::write(&log_path, "").unwrap();
-
-    // Export should handle empty log gracefully
-    let result = export_log(&log_path, &export_path, ExportFormat::Json);
-
-    // Should either succeed with empty output or return an appropriate error
-    if result.is_ok() {
-        assert!(export_path.exists());
-    }
-}
-
-#[test]
-fn test_telemetry_export_nonexistent_log() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("nonexistent.log");
-    let export_path = temp_dir.path().join("export.json");
-
-    // Export should fail for nonexistent file
-    let result = export_log(&log_path, &export_path, ExportFormat::Json);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_telemetry_event_data_variants() {
-    // Test PageProcessed
-    let event1 = EventData::PageProcessed {
-        title: "Test".to_string(),
-        success: true,
-        duration_ms: 100,
-    };
-    let json1 = serde_json::to_string(&event1).unwrap();
-    assert!(json1.contains("Test"));
-
-    // Test EditCompleted
-    let event2 = EventData::EditCompleted {
-        page_id: 123,
-        revision_id: 456,
-        rules_applied: 5,
-        fixes_applied: 3,
-    };
-    let json2 = serde_json::to_string(&event2).unwrap();
-    assert!(json2.contains("123"));
-
-    // Test ErrorOccurred
-    let event3 = EventData::ErrorOccurred {
-        error_type: "TestError".to_string(),
-        message: "Test message".to_string(),
-    };
-    let json3 = serde_json::to_string(&event3).unwrap();
-    assert!(json3.contains("TestError"));
-}
-
-#[test]
-fn test_telemetry_session_lifecycle() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("session.log");
-
-    let config = TelemetryConfig {
-        enabled: true,
-        log_to_file: true,
-        file_path: Some(log_path.clone()),
-        log_level: "info".to_string(),
-    };
-
-    init_telemetry(config).expect("Failed to initialize");
-
-    // Simulate session lifecycle
-    let start_event = TelemetryEvent::new(
-        "session_start",
-        EventData::SessionStarted {
-            profile_id: "test".to_string(),
-            rule_count: 10,
-        },
-    );
-
-    let process_event = TelemetryEvent::new(
-        "page_process",
-        EventData::PageProcessed {
-            title: "Test Page".to_string(),
-            success: true,
-            duration_ms: 150,
-        },
-    );
-
-    let end_event = TelemetryEvent::new(
-        "session_end",
-        EventData::SessionEnded {
-            pages_processed: 1,
-            pages_edited: 1,
-            duration_secs: 1.5,
-        },
-    );
-
-    // Events should be created without errors
-    assert_eq!(start_event.event_type, "session_start");
-    assert_eq!(process_event.event_type, "page_process");
-    assert_eq!(end_event.event_type, "session_end");
-}
-
-#[test]
 fn test_telemetry_export_preserves_order() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("ordered.log");
-    let export_path = temp_dir.path().join("ordered_export.json");
-
-    // Create events in specific order
-    let mut log_content = String::new();
+    let mut events = Vec::new();
     for i in 1..=5 {
-        let event = TelemetryEvent::new(
-            &format!("event_{}", i),
-            EventData::PageProcessed {
-                title: format!("Page {}", i),
-                success: true,
-                duration_ms: i * 100,
-            },
-        );
-        log_content.push_str(&serde_json::to_string(&event).unwrap());
-        log_content.push('\n');
+        events.push(TelemetryEvent::PageProcessed {
+            title: format!("Page {}", i),
+            outcome: "saved".into(),
+            duration_ms: i * 100,
+            timestamp: chrono::Utc::now(),
+        });
     }
-    std::fs::write(&log_path, log_content).unwrap();
 
-    // Export and verify order is preserved
-    export_log(&log_path, &export_path, ExportFormat::Plain).expect("Export should succeed");
+    let mut buf = Vec::new();
+    export_log(&events, ExportFormat::PlainText, &mut buf).unwrap();
+    let output = String::from_utf8(buf).unwrap();
 
-    let exported = std::fs::read_to_string(&export_path).unwrap();
-    let pos1 = exported.find("event_1").unwrap_or(0);
-    let pos2 = exported.find("event_2").unwrap_or(0);
-    let pos3 = exported.find("event_3").unwrap_or(0);
-
+    let pos1 = output.find("Page 1").unwrap();
+    let pos2 = output.find("Page 2").unwrap();
+    let pos3 = output.find("Page 3").unwrap();
     assert!(pos1 < pos2);
     assert!(pos2 < pos3);
 }

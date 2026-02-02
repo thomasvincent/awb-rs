@@ -1,4 +1,5 @@
 use awb_domain::types::{Namespace, Title};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -13,7 +14,7 @@ pub trait FixModule: Send + Sync {
     fn display_name(&self) -> &str;
     fn category(&self) -> &str;
     fn description(&self) -> &str;
-    fn apply(&self, text: &str, context: &FixContext) -> String;
+    fn apply<'a>(&self, text: &'a str, context: &FixContext) -> Cow<'a, str>;
     fn default_enabled(&self) -> bool {
         true
     }
@@ -50,7 +51,8 @@ impl FixRegistry {
         let mut result = text.to_string();
         for module in &self.modules {
             if enabled_ids.contains(module.id()) {
-                result = module.apply(&result, ctx);
+                let new_result = module.apply(&result, ctx);
+                result = new_result.into_owned();
             }
         }
         result
@@ -67,9 +69,10 @@ impl FixRegistry {
         for module in &self.modules {
             if enabled_ids.contains(module.id()) {
                 let new = module.apply(&current, ctx);
-                if new != current {
-                    results.push((module.id().to_string(), new.clone()));
-                    current = new;
+                let new_owned = new.into_owned();
+                if new_owned != current {
+                    results.push((module.id().to_string(), new_owned.clone()));
+                    current = new_owned;
                 }
             }
         }
@@ -103,9 +106,9 @@ impl FixModule for WhitespaceCleanup {
     fn description(&self) -> &str {
         "Normalizes line endings, removes trailing whitespace, collapses excessive blank lines"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
-        let text = text.replace("\r\n", "\n").replace("\r", "\n");
-        let lines: Vec<&str> = text.lines().collect();
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
+        let normalized = text.replace("\r\n", "\n").replace("\r", "\n");
+        let lines: Vec<&str> = normalized.lines().collect();
         let trimmed: Vec<String> = lines.iter().map(|l| l.trim_end().to_string()).collect();
         let mut result = String::new();
         let mut blank_count = 0;
@@ -127,7 +130,11 @@ impl FixModule for WhitespaceCleanup {
         if !result.ends_with('\n') {
             result.push('\n');
         }
-        result
+        if result == text {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(result)
+        }
     }
 }
 
@@ -145,12 +152,17 @@ impl FixModule for HeadingSpacing {
     fn description(&self) -> &str {
         "Ensures blank line before headings"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static RE: OnceLock<regex::Regex> = OnceLock::new();
         let re = RE.get_or_init(|| {
             regex::Regex::new(r"(?m)([^\n])\n(={2,6}[^=])").expect("known-valid regex")
         });
-        re.replace_all(text, "$1\n\n$2").into_owned()
+        let result = re.replace_all(text, "$1\n\n$2");
+        if matches!(result, Cow::Borrowed(_)) {
+            Cow::Borrowed(text)
+        } else {
+            result
+        }
     }
 }
 
@@ -168,7 +180,7 @@ impl FixModule for HtmlToWikitext {
     fn description(&self) -> &str {
         "Converts HTML tags to wikitext equivalents"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static BOLD_RE: OnceLock<regex::Regex> = OnceLock::new();
         static ITALIC_RE: OnceLock<regex::Regex> = OnceLock::new();
         static BR_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -186,7 +198,12 @@ impl FixModule for HtmlToWikitext {
         let re =
             BR_RE.get_or_init(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("known-valid regex"));
         result = re.replace_all(&result, "<br />").into_owned();
-        result
+
+        if result == text {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(result)
+        }
     }
 }
 
@@ -204,12 +221,19 @@ impl FixModule for TrailingWhitespace {
     fn description(&self) -> &str {
         "Removes trailing whitespace from lines"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
-        text.lines()
-            .map(|l| l.trim_end())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
+        let has_trailing = text.lines().any(|l| l != l.trim_end());
+        if !has_trailing {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(
+                text.lines()
+                    .map(|l| l.trim_end())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n",
+            )
+        }
     }
 }
 
@@ -227,7 +251,7 @@ impl FixModule for CategorySorting {
     fn description(&self) -> &str {
         "Alphabetically sorts [[Category:...]] entries"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static CAT_RE: OnceLock<regex::Regex> = OnceLock::new();
         let cat_re = CAT_RE.get_or_init(|| {
             regex::Regex::new(r"\[\[Category:[^\]]+\]\]").expect("known-valid regex")
@@ -237,9 +261,14 @@ impl FixModule for CategorySorting {
             .map(|m| m.as_str().to_string())
             .collect();
         if categories.len() <= 1 {
-            return text.to_string();
+            return Cow::Borrowed(text);
         }
+        let sorted_categories = categories.clone();
         categories.sort_by_key(|a| a.to_lowercase());
+        // Check if already sorted
+        if categories == sorted_categories {
+            return Cow::Borrowed(text);
+        }
         let cleaned = cat_re.replace_all(text, "\x00").to_string();
         let mut result = cleaned.clone();
         for cat in &categories {
@@ -247,7 +276,7 @@ impl FixModule for CategorySorting {
         }
         // Remove any remaining placeholders
         result = result.replace('\x00', "");
-        result
+        Cow::Owned(result)
     }
 }
 
@@ -265,7 +294,7 @@ impl FixModule for CitationFormatting {
     fn description(&self) -> &str {
         "Fixes common citation template issues: normalizes {{cite web}}/{{cite news}}/{{cite journal}}, renames deprecated parameters"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static CITE_RE: OnceLock<regex::Regex> = OnceLock::new();
         static ACCESSDATE_RE: OnceLock<regex::Regex> = OnceLock::new();
         static DEADURL_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -278,38 +307,34 @@ impl FixModule for CitationFormatting {
             regex::Regex::new(r"(?i)\{\{(cite\s+(?:web|news|journal|book|conference))")
                 .expect("known-valid regex")
         });
-        result = cite_re
-            .replace_all(&result, |caps: &regex::Captures| {
-                format!("{{{{{}", caps[1].to_lowercase())
-            })
-            .into_owned();
+        result = cite_re.replace_all(&result, |caps: &regex::Captures| {
+            format!("{{{{{}", caps[1].to_lowercase())
+        }).into_owned();
 
         // Fix deprecated parameter names
         // accessdate → access-date
         let accessdate_re = ACCESSDATE_RE.get_or_init(|| {
             regex::Regex::new(r"(?m)(\|\s*)accessdate(\s*=)").expect("known-valid regex")
         });
-        result = accessdate_re
-            .replace_all(&result, "${1}access-date${2}")
-            .into_owned();
+        result = accessdate_re.replace_all(&result, "${1}access-date${2}").into_owned();
 
         // deadurl → url-status
         let deadurl_re = DEADURL_RE.get_or_init(|| {
             regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:yes|true)")
                 .expect("known-valid regex")
         });
-        result = deadurl_re
-            .replace_all(&result, "${1}url-status${2}dead")
-            .into_owned();
+        result = deadurl_re.replace_all(&result, "${1}url-status${2}dead").into_owned();
         let deadurl_no_re = DEADURL_NO_RE.get_or_init(|| {
             regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:no|false)")
                 .expect("known-valid regex")
         });
-        result = deadurl_no_re
-            .replace_all(&result, "${1}url-status${2}live")
-            .into_owned();
+        result = deadurl_no_re.replace_all(&result, "${1}url-status${2}live").into_owned();
 
-        result
+        if result == text {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(result)
+        }
     }
 }
 
@@ -327,7 +352,7 @@ impl FixModule for DuplicateWikilinkRemoval {
     fn description(&self) -> &str {
         "Removes duplicate wikilinks, keeping only first occurrence"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         use std::collections::HashSet;
 
         static LINK_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -336,24 +361,22 @@ impl FixModule for DuplicateWikilinkRemoval {
         });
         let mut seen_targets = HashSet::new();
 
-        link_re
-            .replace_all(text, |caps: &regex::Captures| {
-                let target = caps.get(1).unwrap().as_str();
-                let display = caps.get(2).map(|m| m.as_str()).unwrap_or(target);
+        link_re.replace_all(text, |caps: &regex::Captures| {
+            let target = caps.get(1).unwrap().as_str();
+            let display = caps.get(2).map(|m| m.as_str()).unwrap_or(target);
 
-                // Normalize target for comparison (case-insensitive, trim whitespace)
-                let normalized_target = target.trim().to_lowercase();
+            // Normalize target for comparison (case-insensitive, trim whitespace)
+            let normalized_target = target.trim().to_lowercase();
 
-                if seen_targets.contains(&normalized_target) {
-                    // Duplicate link - replace with plain display text
-                    display.to_string()
-                } else {
-                    // First occurrence - keep the link
-                    seen_targets.insert(normalized_target);
-                    caps[0].to_string()
-                }
-            })
-            .into_owned()
+            if seen_targets.contains(&normalized_target) {
+                // Duplicate link - replace with plain display text
+                display.to_string()
+            } else {
+                // First occurrence - keep the link
+                seen_targets.insert(normalized_target);
+                caps[0].to_string()
+            }
+        })
     }
 }
 
@@ -371,7 +394,7 @@ impl FixModule for UnicodeNormalization {
     fn description(&self) -> &str {
         "Fixes common unicode issues: non-breaking spaces, en-dashes in ranges, curly quotes in templates"
     }
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static ENDASH_RE: OnceLock<regex::Regex> = OnceLock::new();
         static TEMPLATE_RE: OnceLock<regex::Regex> = OnceLock::new();
 
@@ -379,7 +402,9 @@ impl FixModule for UnicodeNormalization {
 
         // Replace non-breaking spaces (U+00A0) with regular spaces
         // But preserve them in special contexts like French punctuation
-        result = result.replace('\u{00A0}', " ");
+        if result.contains('\u{00A0}') {
+            result = result.replace('\u{00A0}', " ");
+        }
 
         // Normalize en-dash (–) in number ranges to consistent format
         // Match patterns like "2020–2021" or "pp. 10–15"
@@ -391,16 +416,18 @@ impl FixModule for UnicodeNormalization {
         // Only inside {{ }} templates to avoid changing prose
         let template_re = TEMPLATE_RE
             .get_or_init(|| regex::Regex::new(r"\{\{[^}]+\}\}").expect("known-valid regex"));
-        result = template_re
-            .replace_all(&result, |caps: &regex::Captures| {
-                let template = &caps[0];
-                template
-                    .replace(['\u{201C}', '\u{201D}'], "\"") // Left/right double quotes
-                    .replace(['\u{2018}', '\u{2019}'], "'") // Left/right single quotes
-            })
-            .into_owned();
+        result = template_re.replace_all(&result, |caps: &regex::Captures| {
+            let template = &caps[0];
+            template
+                .replace(['\u{201C}', '\u{201D}'], "\"") // Left/right double quotes
+                .replace(['\u{2018}', '\u{2019}'], "'") // Left/right single quotes
+        }).into_owned();
 
-        result
+        if result == text {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(result)
+        }
     }
 }
 
@@ -418,7 +445,7 @@ impl FixModule for DefaultSortFix {
     fn description(&self) -> &str {
         "Adds {{DEFAULTSORT:}} for titles with diacritics if missing"
     }
-    fn apply(&self, text: &str, ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, ctx: &FixContext) -> Cow<'a, str> {
         static DEFAULTSORT_RE: OnceLock<regex::Regex> = OnceLock::new();
         static CAT_RE: OnceLock<regex::Regex> = OnceLock::new();
 
@@ -426,13 +453,13 @@ impl FixModule for DefaultSortFix {
         let defaultsort_re = DEFAULTSORT_RE
             .get_or_init(|| regex::Regex::new(r"(?i)\{\{DEFAULTSORT:").expect("known-valid regex"));
         if defaultsort_re.is_match(text) {
-            return text.to_string();
+            return Cow::Borrowed(text);
         }
 
         // Check if title contains diacritics or non-ASCII characters
         let title_name = &ctx.title.name;
         if title_name.is_ascii() {
-            return text.to_string();
+            return Cow::Borrowed(text);
         }
 
         // Generate ASCII-folded version for sort key
@@ -447,10 +474,10 @@ impl FixModule for DefaultSortFix {
             result.push_str(&text[..pos]);
             result.push_str(&format!("{{{{DEFAULTSORT:{}}}}}\n", sort_key));
             result.push_str(&text[pos..]);
-            result
+            Cow::Owned(result)
         } else {
             // No categories - add at the end
-            format!("{}\n{{{{DEFAULTSORT:{}}}}}\n", text.trim_end(), sort_key)
+            Cow::Owned(format!("{}\n{{{{DEFAULTSORT:{}}}}}\n", text.trim_end(), sort_key))
         }
     }
 }
@@ -507,8 +534,8 @@ mod tests {
         let input = "{{cite web|url=http://example.com|accessdate=2021-01-01}}";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("access-date="));
-        assert!(!result.contains("accessdate="));
+        assert!(result.as_ref().contains("access-date="));
+        assert!(!result.as_ref().contains("accessdate="));
     }
 
     #[test]
@@ -520,9 +547,9 @@ mod tests {
             "{{Cite Web|title=Test}} {{CITE NEWS|title=News}} {{cite JOURNAL|title=Article}}";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("{{cite web"));
-        assert!(result.contains("{{cite news"));
-        assert!(result.contains("{{cite journal"));
+        assert!(result.as_ref().contains("{{cite web"));
+        assert!(result.as_ref().contains("{{cite news"));
+        assert!(result.as_ref().contains("{{cite journal"));
     }
 
     #[test]
@@ -533,7 +560,7 @@ mod tests {
         let input = "{{Infobox|name=Test}} {{cite web|url=test}}";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("{{Infobox|name=Test}}"));
+        assert!(result.as_ref().contains("{{Infobox|name=Test}}"));
     }
 
     // --- DuplicateWikilinkRemoval Tests ---
@@ -546,7 +573,7 @@ mod tests {
         let input = "[[Python]] and [[Python]]";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result, "[[Python]] and Python");
+        assert_eq!(result.as_ref(), "[[Python]] and Python");
     }
 
     #[test]
@@ -557,9 +584,9 @@ mod tests {
         let input = "[[Python (programming language)|Python]] and [[Python (programming language)|the language]]";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.starts_with("[[Python (programming language)|Python]]"));
-        assert!(result.ends_with("the language"));
-        assert_eq!(result.matches("[[Python").count(), 1);
+        assert!(result.as_ref().starts_with("[[Python (programming language)|Python]]"));
+        assert!(result.as_ref().ends_with("the language"));
+        assert_eq!(result.as_ref().matches("[[Python").count(), 1);
     }
 
     #[test]
@@ -570,7 +597,7 @@ mod tests {
         let input = "[[Python]] and [[Python]] and [[Python]]";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result, "[[Python]] and Python and Python");
+        assert_eq!(result.as_ref(), "[[Python]] and Python and Python");
     }
 
     // --- UnicodeNormalization Tests ---
@@ -583,8 +610,8 @@ mod tests {
         let input = "Word\u{00A0}with\u{00A0}nbsp";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result, "Word with nbsp");
-        assert!(!result.contains('\u{00A0}'));
+        assert_eq!(result.as_ref(), "Word with nbsp");
+        assert!(!result.as_ref().contains('\u{00A0}'));
     }
 
     #[test]
@@ -595,8 +622,8 @@ mod tests {
         let input = "Years 2020 – 2021 and pages 10 — 20";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("2020–2021"));
-        assert!(result.contains("10–20"));
+        assert!(result.as_ref().contains("2020–2021"));
+        assert!(result.as_ref().contains("10–20"));
     }
 
     #[test]
@@ -607,8 +634,8 @@ mod tests {
         let input = "{{cite|title=\u{201C}Title\u{201D}|author=\u{2018}Name\u{2019}}}";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("title=\"Title\""));
-        assert!(result.contains("author='Name'"));
+        assert!(result.as_ref().contains("title=\"Title\""));
+        assert!(result.as_ref().contains("author='Name'"));
     }
 
     #[test]
@@ -621,7 +648,7 @@ mod tests {
         let result = fix.apply(input, &ctx);
 
         // Since we only fix quotes inside templates, these should remain
-        assert_eq!(result, input);
+        assert_eq!(result.as_ref(), input);
     }
 
     // --- DefaultSortFix Tests ---
@@ -634,8 +661,8 @@ mod tests {
         let input = "Article text.\n[[Category:Food]]";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("{{DEFAULTSORT:Cafe}}"));
-        assert!(result.contains("[[Category:Food]]"));
+        assert!(result.as_ref().contains("{{DEFAULTSORT:Cafe}}"));
+        assert!(result.as_ref().contains("[[Category:Food]]"));
     }
 
     #[test]
@@ -646,8 +673,8 @@ mod tests {
         let input = "{{DEFAULTSORT:Custom Sort}}\n[[Category:Food]]";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result, input, "Should not add another DEFAULTSORT");
-        assert_eq!(result.matches("DEFAULTSORT").count(), 1);
+        assert_eq!(result.as_ref(), input, "Should not add another DEFAULTSORT");
+        assert_eq!(result.as_ref().matches("DEFAULTSORT").count(), 1);
     }
 
     #[test]
@@ -658,7 +685,7 @@ mod tests {
         let input = "Article text.\n[[Category:Test]]";
         let result = fix.apply(input, &ctx);
 
-        assert!(!result.contains("DEFAULTSORT"));
+        assert!(!result.as_ref().contains("DEFAULTSORT"));
     }
 
     #[test]
@@ -670,8 +697,8 @@ mod tests {
         let result = fix.apply(input, &ctx);
 
         // DEFAULTSORT should come before the first category
-        let defaultsort_pos = result.find("DEFAULTSORT").unwrap();
-        let category_pos = result.find("[[Category:First]]").unwrap();
+        let defaultsort_pos = result.as_ref().find("DEFAULTSORT").unwrap();
+        let category_pos = result.as_ref().find("[[Category:First]]").unwrap();
         assert!(defaultsort_pos < category_pos);
     }
 
@@ -683,8 +710,8 @@ mod tests {
         let input = "Article text with no categories.";
         let result = fix.apply(input, &ctx);
 
-        assert!(result.contains("{{DEFAULTSORT:Cafe}}"));
-        assert!(result.ends_with("{{DEFAULTSORT:Cafe}}\n"));
+        assert!(result.as_ref().contains("{{DEFAULTSORT:Cafe}}"));
+        assert!(result.as_ref().ends_with("{{DEFAULTSORT:Cafe}}\n"));
     }
 
     // --- ascii_fold helper tests ---
@@ -747,7 +774,7 @@ mod tests {
         let result = registry.apply_all(input, &ctx, &enabled);
 
         // No fixes should be applied
-        assert_eq!(result, input);
+        assert_eq!(&result, input);
     }
 
     #[test]

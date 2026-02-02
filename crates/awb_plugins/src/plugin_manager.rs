@@ -5,6 +5,7 @@ use crate::sandbox::SandboxConfig;
 use crate::wasm_plugin::WasmPlugin;
 use awb_engine::general_fixes::{FixContext, FixModule};
 use indexmap::IndexMap;
+use std::borrow::Cow;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
@@ -253,11 +254,20 @@ impl FixModule for PluginFixModule {
         "User-defined plugins (Lua and WASM)"
     }
 
-    fn apply(&self, text: &str, _context: &FixContext) -> String {
-        self.manager.apply_all(text).unwrap_or_else(|e| {
-            warn!("Plugin execution failed: {}", e);
-            text.to_string()
-        })
+    fn apply<'a>(&self, text: &'a str, _context: &FixContext) -> Cow<'a, str> {
+        match self.manager.apply_all(text) {
+            Ok(result) => {
+                if result == text {
+                    Cow::Borrowed(text)
+                } else {
+                    Cow::Owned(result)
+                }
+            }
+            Err(e) => {
+                warn!("Plugin execution failed: {}", e);
+                Cow::Borrowed(text)
+            }
+        }
     }
 
     fn default_enabled(&self) -> bool {
