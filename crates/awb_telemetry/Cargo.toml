@@ -1,0 +1,17 @@
+[package]
+name = "awb_telemetry"
+description = "Structured logging and telemetry for AWB-RS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+awb_domain = { path = "../awb_domain" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }

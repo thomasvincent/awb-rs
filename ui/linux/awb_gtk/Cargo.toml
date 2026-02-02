@@ -1,0 +1,19 @@
+[package]
+name = "awb_gtk"
+description = "GTK4 Linux UI for AWB-RS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+awb_domain = { path = "../../../crates/awb_domain" }
+awb_engine = { path = "../../../crates/awb_engine" }
+awb_mw_api = { path = "../../../crates/awb_mw_api" }
+awb_storage = { path = "../../../crates/awb_storage" }
+awb_security = { path = "../../../crates/awb_security" }
+awb_telemetry = { path = "../../../crates/awb_telemetry" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

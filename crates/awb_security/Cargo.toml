@@ -1,0 +1,11 @@
+[package]
+name = "awb_security"
+description = "Credential management and secret redaction for AWB-RS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
