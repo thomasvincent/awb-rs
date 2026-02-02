@@ -214,7 +214,13 @@ impl MediaWikiClient for ReqwestMwClient {
         let ns = Namespace(page["ns"].as_i64().unwrap_or(0) as i32);
         let page_title = page["title"].as_str().unwrap_or("").to_string();
 
-        let rev = &page["revisions"][0];
+        let rev = page["revisions"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .ok_or_else(|| MwApiError::ApiError {
+                code: "norevisions".into(),
+                info: "No revisions returned for page".into(),
+            })?;
         let revision = RevisionId(rev["revid"].as_u64().unwrap_or(0));
         let timestamp_str = rev["timestamp"].as_str().unwrap_or("");
         let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)

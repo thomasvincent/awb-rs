@@ -269,13 +269,13 @@ impl FixModule for CategorySorting {
         if categories == sorted_categories {
             return Cow::Borrowed(text);
         }
-        let cleaned = cat_re.replace_all(text, "\x00").to_string();
+        let cleaned = cat_re.replace_all(text, "\u{FFFE}").to_string();
         let mut result = cleaned.clone();
         for cat in &categories {
-            result = result.replacen('\x00', cat, 1);
+            result = result.replacen('\u{FFFE}', cat, 1);
         }
         // Remove any remaining placeholders
-        result = result.replace('\x00', "");
+        result = result.replace('\u{FFFE}', "");
         Cow::Owned(result)
     }
 }
