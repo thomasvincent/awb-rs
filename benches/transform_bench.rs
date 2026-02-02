@@ -39,11 +39,8 @@ fn bench_plain_rules(c: &mut Criterion) {
                        Pattern0 Pattern5 Pattern10 should all be replaced in this benchmark test.\n\
                        The quick brown fox jumps over the lazy dog. Pattern1 pattern2 pattern3.\n";
 
-    let registry = FixRegistry::new();
-    let enabled = HashSet::new();
-
     group.bench_with_input(BenchmarkId::new("10_rules", "sample"), &ruleset_10, |b, ruleset| {
-        let engine = TransformEngine::new(ruleset, registry.clone(), enabled.clone()).unwrap();
+        let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
         let page = create_test_page(sample_text);
         b.iter(|| {
             black_box(engine.apply(&page));
@@ -51,7 +48,7 @@ fn bench_plain_rules(c: &mut Criterion) {
     });
 
     group.bench_with_input(BenchmarkId::new("50_rules", "sample"), &ruleset_50, |b, ruleset| {
-        let engine = TransformEngine::new(ruleset, registry.clone(), enabled.clone()).unwrap();
+        let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
         let page = create_test_page(sample_text);
         b.iter(|| {
             black_box(engine.apply(&page));
