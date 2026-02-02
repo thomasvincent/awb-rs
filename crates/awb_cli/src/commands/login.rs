@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use awb_mw_api::client::{MediaWikiClient, ReqwestMwClient};
-use awb_security::{CredentialPort, FileCredentialStore};
+use awb_security::{CredentialPort, KeyringCredentialStore};
 use console::style;
 use dialoguer::Password;
 use url::Url;
@@ -29,17 +29,16 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
 
     println!("{}", style("✓").green().bold());
 
-    // Store credentials
-    let cred_store = FileCredentialStore::new()
-        .context("Failed to initialize credential store")?;
+    // Store credentials in OS keychain
+    let cred_store = KeyringCredentialStore::new();
     cred_store.set_password(&profile, &password)
-        .context("Failed to store credentials")?;
+        .context("Failed to store credentials in keychain")?;
 
     println!();
     println!("{}", style("Login successful!").green().bold());
     println!("Credentials stored under profile: {}", style(&profile).yellow());
     println!();
-    println!("Credentials saved to: ~/.awb-rs/credentials.json");
+    println!("Credentials saved to OS keychain (service: awb-rs)");
 
     Ok(())
 }

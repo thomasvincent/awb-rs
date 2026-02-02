@@ -1,5 +1,6 @@
 use thiserror::Error;
 use std::path::PathBuf;
+use keyring::Entry;
 
 #[derive(Debug, Error)]
 pub enum CredentialError {
@@ -52,17 +53,22 @@ impl Default for InMemoryCredentialStore {
 
 impl CredentialPort for InMemoryCredentialStore {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError> {
-        self.store.lock().unwrap()
+        self.store.lock()
+            .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
             .get(profile_id)
             .cloned()
             .ok_or_else(|| CredentialError::NotFound(profile_id.to_string()))
     }
     fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError> {
-        self.store.lock().unwrap().insert(profile_id.to_string(), password.to_string());
+        self.store.lock()
+            .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
+            .insert(profile_id.to_string(), password.to_string());
         Ok(())
     }
     fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError> {
-        self.store.lock().unwrap().remove(profile_id);
+        self.store.lock()
+            .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
+            .remove(profile_id);
         Ok(())
     }
 }
@@ -125,11 +131,8 @@ impl FileCredentialStore {
     }
 }
 
-impl Default for FileCredentialStore {
-    fn default() -> Self {
-        Self::new().expect("Failed to create FileCredentialStore")
-    }
-}
+// Note: Default implementation removed to avoid panics.
+// Users should call FileCredentialStore::new() directly and handle errors.
 
 impl CredentialPort for FileCredentialStore {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError> {
@@ -152,5 +155,88 @@ impl CredentialPort for FileCredentialStore {
         credentials.remove(profile_id);
         self.save(&credentials)?;
         Ok(())
+    }
+}
+
+/// OS keychain-backed credential store using the keyring crate
+pub struct KeyringCredentialStore {
+    service: String,
+}
+
+impl KeyringCredentialStore {
+    /// Create a new KeyringCredentialStore with service name "awb-rs"
+    pub fn new() -> Self {
+        Self {
+            service: "awb-rs".to_string(),
+        }
+    }
+
+    /// Create an entry for the given profile
+    fn entry(&self, profile_id: &str) -> Result<Entry, CredentialError> {
+        Entry::new(&self.service, profile_id)
+            .map_err(|e| CredentialError::Backend(format!("Failed to create keyring entry: {}", e)))
+    }
+}
+
+impl Default for KeyringCredentialStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CredentialPort for KeyringCredentialStore {
+    fn get_password(&self, profile_id: &str) -> Result<String, CredentialError> {
+        let entry = self.entry(profile_id)?;
+        entry
+            .get_password()
+            .map_err(|e| match e {
+                keyring::Error::NoEntry => CredentialError::NotFound(profile_id.to_string()),
+                keyring::Error::PlatformFailure(ref err) => {
+                    let err_msg = err.to_string().to_lowercase();
+                    if err_msg.contains("denied") || err_msg.contains("access") {
+                        CredentialError::AccessDenied
+                    } else {
+                        CredentialError::Backend(format!("Keyring error: {}", e))
+                    }
+                }
+                _ => CredentialError::Backend(format!("Keyring error: {}", e)),
+            })
+    }
+
+    fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError> {
+        let entry = self.entry(profile_id)?;
+        entry
+            .set_password(password)
+            .map_err(|e| match e {
+                keyring::Error::PlatformFailure(ref err) => {
+                    let err_msg = err.to_string().to_lowercase();
+                    if err_msg.contains("denied") || err_msg.contains("access") {
+                        CredentialError::AccessDenied
+                    } else {
+                        CredentialError::Backend(format!("Keyring error: {}", e))
+                    }
+                }
+                _ => CredentialError::Backend(format!("Keyring error: {}", e)),
+            })
+    }
+
+    fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError> {
+        let entry = self.entry(profile_id)?;
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => {
+                // Deleting a non-existent credential is not an error
+                Ok(())
+            }
+            Err(keyring::Error::PlatformFailure(ref err)) => {
+                let err_msg = err.to_string().to_lowercase();
+                if err_msg.contains("denied") || err_msg.contains("access") {
+                    Err(CredentialError::AccessDenied)
+                } else {
+                    Err(CredentialError::Backend(format!("Keyring error: {}", err)))
+                }
+            }
+            Err(e) => Err(CredentialError::Backend(format!("Keyring error: {}", e))),
+        }
     }
 }
