@@ -45,12 +45,22 @@ sha1 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 
+# Security
+secrecy = "0.10"
+dirs = "5"
+
 # Regex
 regex = "1"
 fancy-regex = "0.14"
 
+# Encoding
+percent-encoding = "2"
+
 # Diff
 similar = { version = "2", features = ["unicode"] }
+
+# Collections
+indexmap = "2"
 
 # Plugins
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }

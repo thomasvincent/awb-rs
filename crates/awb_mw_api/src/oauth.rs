@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 type HmacSha1 = Hmac<Sha1>;
 
 /// OAuth 1.0a configuration (used by MediaWiki)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OAuth1Config {
     pub consumer_key: String,
     pub consumer_secret: String,
@@ -22,8 +22,19 @@ pub struct OAuth1Config {
     pub access_secret: String,
 }
 
+impl std::fmt::Debug for OAuth1Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuth1Config")
+            .field("consumer_key", &self.consumer_key)
+            .field("consumer_secret", &"***REDACTED***")
+            .field("access_token", &self.access_token)
+            .field("access_secret", &"***REDACTED***")
+            .finish()
+    }
+}
+
 /// OAuth 2.0 configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OAuth2Config {
     pub client_id: String,
     pub client_secret: String,
@@ -32,14 +43,37 @@ pub struct OAuth2Config {
     pub auth_endpoint: String,
 }
 
+impl std::fmt::Debug for OAuth2Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuth2Config")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"***REDACTED***")
+            .field("redirect_uri", &self.redirect_uri)
+            .field("token_endpoint", &self.token_endpoint)
+            .field("auth_endpoint", &self.auth_endpoint)
+            .finish()
+    }
+}
+
 /// Token response for OAuth 2.0
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_in: Option<u64>,
     #[serde(skip, default = "SystemTime::now")]
     pub issued_at: SystemTime,
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"***REDACTED***")
+            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "***REDACTED***"))
+            .field("expires_in", &self.expires_in)
+            .field("issued_at", &self.issued_at)
+            .finish()
+    }
 }
 
 impl TokenResponse {
@@ -66,7 +100,7 @@ pub fn oauth1_sign_request(
     let nonce = generate_nonce();
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs()
         .to_string();
 
@@ -133,7 +167,7 @@ pub fn oauth1_sign_request(
 fn generate_nonce() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    let nonce: u64 = rng.r#gen();
+    let nonce: u128 = rng.r#gen();
     format!("{:x}", nonce)
 }
 
@@ -159,8 +193,16 @@ pub async fn oauth2_authorization_url(config: &OAuth2Config) -> Result<(String, 
 pub async fn oauth2_exchange_code(
     config: &OAuth2Config,
     code: &str,
-    _state: &str,
+    expected_state: &str,
+    received_state: &str,
 ) -> Result<TokenResponse, MwApiError> {
+    // Validate CSRF state to prevent attacks
+    if expected_state != received_state {
+        return Err(MwApiError::AuthError {
+            reason: "OAuth2 state mismatch - possible CSRF attack".into(),
+        });
+    }
+
     let client = build_oauth2_client(config)?;
 
     let token_result = client

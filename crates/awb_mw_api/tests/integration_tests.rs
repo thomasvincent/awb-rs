@@ -15,7 +15,7 @@ fn create_test_client(mock_url: &str) -> ReqwestMwClient {
         max_retries: 3,
         backoff_base: Duration::from_millis(10),
     };
-    ReqwestMwClient::new(api_url, policy)
+    ReqwestMwClient::new(api_url, policy).expect("Failed to create test client")
 }
 
 #[tokio::test]

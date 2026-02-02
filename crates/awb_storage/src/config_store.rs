@@ -62,6 +62,14 @@ impl TomlConfigStore {
         }
         let data = toml::to_string_pretty(config)?;
         std::fs::write(&self.path, data)?;
+
+        // Set restrictive permissions on Unix (0600 = owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600))?;
+        }
+
         Ok(())
     }
 

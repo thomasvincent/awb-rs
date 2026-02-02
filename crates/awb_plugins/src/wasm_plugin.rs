@@ -119,6 +119,11 @@ impl WasmPlugin {
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory read failed: {}", e)))?;
         let result_len = i32::from_le_bytes(len_bytes) as usize;
 
+        // Cap result size to 10MB to prevent malicious plugins from consuming excessive memory
+        if result_len > 10 * 1024 * 1024 {
+            return Err(PluginError::ExecutionFailed("result too large".into()));
+        }
+
         let mut result_bytes = vec![0u8; result_len];
         memory.read(&store, (result_ptr + 4) as usize, &mut result_bytes)
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory read failed: {}", e)))?;
@@ -259,6 +264,6 @@ mod tests {
         let result = plugin.transform("hi");
         // Depending on fuel consumption, this might succeed or fail
         // This test mainly ensures the fuel system is active
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_err() || result.is_ok());
     }
 }

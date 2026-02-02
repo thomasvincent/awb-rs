@@ -42,7 +42,8 @@ pub async fn run(
         .context("No stored credentials found. Run 'login' command first.")?;
 
     // Create client and login
-    let client = ReqwestMwClient::new(wiki.clone(), profile.throttle_policy.clone());
+    let client = ReqwestMwClient::new(wiki.clone(), profile.throttle_policy.clone())
+        .context("Failed to create HTTP client")?;
 
     print!("Logging in... ");
     let username = match &profile.auth_method {

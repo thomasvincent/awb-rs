@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use dialoguer::Input;
 use url::Url;
+use awb_security::{CredentialPort, FileCredentialStore};
 
 pub async fn setup(
     wiki: Url,
@@ -11,7 +12,11 @@ pub async fn setup(
     profile: String,
 ) -> Result<()> {
     use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};
-    use awb_security::credential::{CredentialPort, InMemoryCredentialStore};
+
+    // Validate profile name to prevent path traversal
+    if !profile.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        anyhow::bail!("Profile name must contain only alphanumeric characters, hyphens, and underscores");
+    }
 
     println!("Setting up OAuth 1.0a for {}", wiki);
 
@@ -33,7 +38,8 @@ pub async fn setup(
     };
 
     // Store OAuth credentials
-    let store = InMemoryCredentialStore::new();
+    let store = FileCredentialStore::new()
+        .context("Failed to initialize credential store")?;
     let token_json = serde_json::json!({
         "consumer_key": consumer_key,
         "consumer_secret": consumer_secret,
@@ -66,6 +72,11 @@ pub async fn authorize(
 ) -> Result<()> {
     use awb_mw_api::oauth::{OAuth2Config, oauth2_authorization_url, oauth2_exchange_code};
 
+    // Validate profile name to prevent path traversal
+    if !profile.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        anyhow::bail!("Profile name must contain only alphanumeric characters, hyphens, and underscores");
+    }
+
     println!("Starting OAuth 2.0 authorization flow for {}", wiki);
 
     // Build OAuth2 config
@@ -97,15 +108,20 @@ pub async fn authorize(
         .interact_text()
         .context("Failed to read authorization code")?;
 
+    let received_state: String = Input::new()
+        .with_prompt("State parameter from redirect URL")
+        .interact_text()
+        .context("Failed to read state")?;
+
     // Exchange code for token
     println!("Exchanging authorization code for access token...");
-    let token = oauth2_exchange_code(&config, &code, &state)
+    let token = oauth2_exchange_code(&config, &code, &state, &received_state)
         .await
         .context("Failed to exchange authorization code")?;
 
     // Store tokens
-    use awb_security::credential::{CredentialPort, InMemoryCredentialStore};
-    let store = InMemoryCredentialStore::new();
+    let store = FileCredentialStore::new()
+        .context("Failed to initialize credential store")?;
     let token_json = serde_json::to_string(&token).context("Failed to serialize token")?;
     store.set_oauth_token(&profile, &token_json)
         .context("Failed to store OAuth token")?;
