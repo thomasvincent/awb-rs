@@ -4,14 +4,14 @@ use crate::plugin_trait::Plugin;
 use crate::sandbox::SandboxConfig;
 use crate::wasm_plugin::WasmPlugin;
 use awb_engine::general_fixes::{FixContext, FixModule};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
 /// Manages a collection of plugins and integrates them with the AWB fix pipeline
 pub struct PluginManager {
-    plugins: HashMap<String, Box<dyn Plugin>>,
-    enabled: HashMap<String, bool>,
+    plugins: IndexMap<String, Box<dyn Plugin>>,
+    enabled: IndexMap<String, bool>,
     #[allow(dead_code)]
     config: SandboxConfig,
 }
@@ -25,8 +25,8 @@ impl PluginManager {
     /// Create a new plugin manager with custom sandbox configuration
     pub fn with_config(config: SandboxConfig) -> Self {
         Self {
-            plugins: HashMap::new(),
-            enabled: HashMap::new(),
+            plugins: IndexMap::new(),
+            enabled: IndexMap::new(),
             config,
         }
     }
@@ -121,8 +121,8 @@ impl PluginManager {
 
     /// Remove a plugin by name
     pub fn remove_plugin(&mut self, name: &str) -> Option<Box<dyn Plugin>> {
-        self.enabled.remove(name);
-        self.plugins.remove(name)
+        self.enabled.swap_remove(name);
+        self.plugins.swap_remove(name)
     }
 
     /// Enable a plugin by name

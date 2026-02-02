@@ -20,6 +20,10 @@ pub struct Checkpoint {
     /// List of completed page titles
     pub completed_pages: Vec<String>,
 
+    /// HashSet for fast lookup of completed pages
+    #[serde(skip)]
+    completed_pages_set: std::collections::HashSet<String>,
+
     /// Total pages edited so far
     pub pages_edited: usize,
 
@@ -39,6 +43,7 @@ impl Checkpoint {
         Self {
             last_processed_index: 0,
             completed_pages: Vec::new(),
+            completed_pages_set: std::collections::HashSet::new(),
             pages_edited: 0,
             pages_skipped: 0,
             pages_errored: 0,
@@ -56,13 +61,16 @@ impl Checkpoint {
     /// Load checkpoint from file
     pub fn load(path: &Path) -> Result<Self, CheckpointError> {
         let json = std::fs::read_to_string(path)?;
-        let checkpoint = serde_json::from_str(&json)?;
+        let mut checkpoint: Self = serde_json::from_str(&json)?;
+        // Rebuild the HashSet from the Vec after deserialization
+        checkpoint.completed_pages_set = checkpoint.completed_pages.iter().cloned().collect();
         Ok(checkpoint)
     }
 
     /// Update checkpoint with page completion
     pub fn record_page(&mut self, title: String, edited: bool, skipped: bool, errored: bool) {
-        self.completed_pages.push(title);
+        self.completed_pages.push(title.clone());
+        self.completed_pages_set.insert(title);
         self.last_processed_index += 1;
 
         if edited {
@@ -78,7 +86,7 @@ impl Checkpoint {
 
     /// Check if a page has been completed
     pub fn is_completed(&self, title: &str) -> bool {
-        self.completed_pages.contains(&title.to_string())
+        self.completed_pages_set.contains(title)
     }
 
     /// Get the next page index to process
@@ -96,7 +104,6 @@ impl Default for Checkpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     #[test]

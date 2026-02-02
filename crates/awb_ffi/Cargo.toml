@@ -22,6 +22,7 @@ tokio = { workspace = true }
 uniffi = { workspace = true }
 lazy_static = "1.4"
 chrono = { workspace = true }
+secrecy = { workspace = true }
 
 [build-dependencies]
 uniffi = { workspace = true, features = ["build"] }

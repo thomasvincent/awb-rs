@@ -1,5 +1,6 @@
 use awb_domain::types::{Title, Namespace};
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 pub struct FixContext {
     pub title: Title,
@@ -112,7 +113,8 @@ impl FixModule for HeadingSpacing {
     fn category(&self) -> &str { "Formatting" }
     fn description(&self) -> &str { "Ensures blank line before headings" }
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
-        let re = regex::Regex::new(r"(?m)([^\n])\n(={2,6}[^=])").unwrap();
+        static RE: OnceLock<regex::Regex> = OnceLock::new();
+        let re = RE.get_or_init(|| regex::Regex::new(r"(?m)([^\n])\n(={2,6}[^=])").unwrap());
         re.replace_all(text, "$1\n\n$2").into_owned()
     }
 }
@@ -124,15 +126,19 @@ impl FixModule for HtmlToWikitext {
     fn category(&self) -> &str { "Formatting" }
     fn description(&self) -> &str { "Converts HTML tags to wikitext equivalents" }
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        static BOLD_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static ITALIC_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static BR_RE: OnceLock<regex::Regex> = OnceLock::new();
+
         let mut result = text.to_string();
         // Bold
-        let re = regex::Regex::new(r"(?i)<b>(.*?)</b>").unwrap();
+        let re = BOLD_RE.get_or_init(|| regex::Regex::new(r"(?i)<b>(.*?)</b>").unwrap());
         result = re.replace_all(&result, "'''$1'''").into_owned();
         // Italic
-        let re = regex::Regex::new(r"(?i)<i>(.*?)</i>").unwrap();
+        let re = ITALIC_RE.get_or_init(|| regex::Regex::new(r"(?i)<i>(.*?)</i>").unwrap());
         result = re.replace_all(&result, "''$1''").into_owned();
         // BR
-        let re = regex::Regex::new(r"(?i)<br\s*/?>").unwrap();
+        let re = BR_RE.get_or_init(|| regex::Regex::new(r"(?i)<br\s*/?>").unwrap());
         result = re.replace_all(&result, "<br />").into_owned();
         result
     }
@@ -156,7 +162,8 @@ impl FixModule for CategorySorting {
     fn category(&self) -> &str { "Categories" }
     fn description(&self) -> &str { "Alphabetically sorts [[Category:...]] entries" }
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
-        let cat_re = regex::Regex::new(r"\[\[Category:[^\]]+\]\]").unwrap();
+        static CAT_RE: OnceLock<regex::Regex> = OnceLock::new();
+        let cat_re = CAT_RE.get_or_init(|| regex::Regex::new(r"\[\[Category:[^\]]+\]\]").unwrap());
         let mut categories: Vec<String> = cat_re.find_iter(text).map(|m| m.as_str().to_string()).collect();
         if categories.len() <= 1 { return text.to_string(); }
         categories.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
@@ -178,28 +185,29 @@ impl FixModule for CitationFormatting {
     fn category(&self) -> &str { "Citations" }
     fn description(&self) -> &str { "Fixes common citation template issues: normalizes {{cite web}}/{{cite news}}/{{cite journal}}, renames deprecated parameters" }
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        static CITE_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static ACCESSDATE_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static DEADURL_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static DEADURL_NO_RE: OnceLock<regex::Regex> = OnceLock::new();
+
         let mut result = text.to_string();
 
         // Normalize citation template names to lowercase
-        let cite_re = regex::Regex::new(r"(?i)\{\{(cite\s+(?:web|news|journal|book|conference))").unwrap();
+        let cite_re = CITE_RE.get_or_init(|| regex::Regex::new(r"(?i)\{\{(cite\s+(?:web|news|journal|book|conference))").unwrap());
         result = cite_re.replace_all(&result, |caps: &regex::Captures| {
             format!("{{{{{}", caps[1].to_lowercase().replace(' ', " "))
         }).into_owned();
 
         // Fix deprecated parameter names
         // accessdate → access-date
-        let accessdate_re = regex::Regex::new(r"(?m)(\|\s*)accessdate(\s*=)").unwrap();
+        let accessdate_re = ACCESSDATE_RE.get_or_init(|| regex::Regex::new(r"(?m)(\|\s*)accessdate(\s*=)").unwrap());
         result = accessdate_re.replace_all(&result, "${1}access-date${2}").into_owned();
 
         // deadurl → url-status
-        let deadurl_re = regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:yes|true)").unwrap();
+        let deadurl_re = DEADURL_RE.get_or_init(|| regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:yes|true)").unwrap());
         result = deadurl_re.replace_all(&result, "${1}url-status${2}dead").into_owned();
-        let deadurl_no_re = regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:no|false)").unwrap();
+        let deadurl_no_re = DEADURL_NO_RE.get_or_init(|| regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:no|false)").unwrap());
         result = deadurl_no_re.replace_all(&result, "${1}url-status${2}live").into_owned();
-
-        // Ensure consistent pipe separators (no spaces before pipes)
-        let pipe_re = regex::Regex::new(r"(?m)\s+(\|)").unwrap();
-        result = pipe_re.replace_all(&result, " $1").into_owned();
 
         result
     }
@@ -214,7 +222,8 @@ impl FixModule for DuplicateWikilinkRemoval {
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
         use std::collections::HashSet;
 
-        let link_re = regex::Regex::new(r"\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]").unwrap();
+        static LINK_RE: OnceLock<regex::Regex> = OnceLock::new();
+        let link_re = LINK_RE.get_or_init(|| regex::Regex::new(r"\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]").unwrap());
         let mut seen_targets = HashSet::new();
 
         link_re.replace_all(text, |caps: &regex::Captures| {
@@ -243,6 +252,9 @@ impl FixModule for UnicodeNormalization {
     fn category(&self) -> &str { "Formatting" }
     fn description(&self) -> &str { "Fixes common unicode issues: non-breaking spaces, en-dashes in ranges, curly quotes in templates" }
     fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        static ENDASH_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static TEMPLATE_RE: OnceLock<regex::Regex> = OnceLock::new();
+
         let mut result = text.to_string();
 
         // Replace non-breaking spaces (U+00A0) with regular spaces
@@ -251,12 +263,12 @@ impl FixModule for UnicodeNormalization {
 
         // Normalize en-dash (–) in number ranges to consistent format
         // Match patterns like "2020–2021" or "pp. 10–15"
-        let endash_re = regex::Regex::new(r"(\d)\s*[–—]\s*(\d)").unwrap();
+        let endash_re = ENDASH_RE.get_or_init(|| regex::Regex::new(r"(\d)\s*[–—]\s*(\d)").unwrap());
         result = endash_re.replace_all(&result, "$1–$2").into_owned();
 
         // Fix curly quotes to straight quotes in template parameters
         // Only inside {{ }} templates to avoid changing prose
-        let template_re = regex::Regex::new(r"\{\{[^}]+\}\}").unwrap();
+        let template_re = TEMPLATE_RE.get_or_init(|| regex::Regex::new(r"\{\{[^}]+\}\}").unwrap());
         result = template_re.replace_all(&result, |caps: &regex::Captures| {
             let template = &caps[0];
             template
@@ -277,8 +289,11 @@ impl FixModule for DefaultSortFix {
     fn category(&self) -> &str { "Categories" }
     fn description(&self) -> &str { "Adds {{DEFAULTSORT:}} for titles with diacritics if missing" }
     fn apply(&self, text: &str, ctx: &FixContext) -> String {
+        static DEFAULTSORT_RE: OnceLock<regex::Regex> = OnceLock::new();
+        static CAT_RE: OnceLock<regex::Regex> = OnceLock::new();
+
         // Check if DEFAULTSORT already exists
-        let defaultsort_re = regex::Regex::new(r"(?i)\{\{DEFAULTSORT:").unwrap();
+        let defaultsort_re = DEFAULTSORT_RE.get_or_init(|| regex::Regex::new(r"(?i)\{\{DEFAULTSORT:").unwrap());
         if defaultsort_re.is_match(text) {
             return text.to_string();
         }
@@ -293,7 +308,7 @@ impl FixModule for DefaultSortFix {
         let sort_key = ascii_fold(title_name);
 
         // Find the best position to insert DEFAULTSORT (before categories if present)
-        let cat_re = regex::Regex::new(r"(?m)^(\[\[Category:)").unwrap();
+        let cat_re = CAT_RE.get_or_init(|| regex::Regex::new(r"(?m)^(\[\[Category:)").unwrap());
         if let Some(mat) = cat_re.find(text) {
             let pos = mat.start();
             let mut result = String::with_capacity(text.len() + sort_key.len() + 20);
@@ -311,29 +326,29 @@ impl FixModule for DefaultSortFix {
 // Helper function to convert diacritics to ASCII equivalents
 fn ascii_fold(text: &str) -> String {
     text.chars()
-        .map(|c| match c {
-            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
-            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'Ā' | 'Ă' | 'Ą' => 'A',
-            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
-            'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => 'E',
-            'ì' | 'í' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' => 'i',
-            'Ì' | 'Í' | 'Î' | 'Ï' | 'Ĩ' | 'Ī' | 'Ĭ' | 'Į' => 'I',
-            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => 'o',
-            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'Ō' | 'Ŏ' | 'Ő' => 'O',
-            'ù' | 'ú' | 'û' | 'ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
-            'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ũ' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => 'U',
-            'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
-            'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => 'C',
-            'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
-            'Ñ' | 'Ń' | 'Ņ' | 'Ň' => 'N',
-            'ý' | 'ÿ' | 'ŷ' => 'y',
-            'Ý' | 'Ÿ' | 'Ŷ' => 'Y',
-            'ß' => 's',
-            'æ' => 'a',
-            'Æ' => 'A',
-            'œ' => 'o',
-            'Œ' => 'O',
-            _ => c,
+        .flat_map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => vec!['a'],
+            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'Ā' | 'Ă' | 'Ą' => vec!['A'],
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => vec!['e'],
+            'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => vec!['E'],
+            'ì' | 'í' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' => vec!['i'],
+            'Ì' | 'Í' | 'Î' | 'Ï' | 'Ĩ' | 'Ī' | 'Ĭ' | 'Į' => vec!['I'],
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => vec!['o'],
+            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'Ō' | 'Ŏ' | 'Ő' => vec!['O'],
+            'ù' | 'ú' | 'û' | 'ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => vec!['u'],
+            'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ũ' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => vec!['U'],
+            'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => vec!['c'],
+            'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => vec!['C'],
+            'ñ' | 'ń' | 'ņ' | 'ň' => vec!['n'],
+            'Ñ' | 'Ń' | 'Ņ' | 'Ň' => vec!['N'],
+            'ý' | 'ÿ' | 'ŷ' => vec!['y'],
+            'Ý' | 'Ÿ' | 'Ŷ' => vec!['Y'],
+            'ß' => vec!['s', 's'],
+            'æ' => vec!['a', 'e'],
+            'Æ' => vec!['A', 'e'],
+            'œ' => vec!['o', 'e'],
+            'Œ' => vec!['O', 'e'],
+            _ => vec![c],
         })
         .collect()
 }

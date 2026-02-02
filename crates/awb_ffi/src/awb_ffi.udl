@@ -1,4 +1,5 @@
 namespace awb_ffi {
+  [Throws=FfiError]
   SessionHandle create_session(string wiki_url, string username, string password);
   [Throws=FfiError]
   void login(SessionHandle handle);

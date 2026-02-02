@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use awb_mw_api::client::{MediaWikiClient, ReqwestMwClient};
-use awb_security::{CredentialPort, InMemoryCredentialStore};
+use awb_security::{CredentialPort, FileCredentialStore};
 use console::style;
 use dialoguer::Password;
 use url::Url;
@@ -19,7 +19,8 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
         .context("Failed to read password")?;
 
     // Create client and attempt login
-    let client = ReqwestMwClient::new(wiki.clone(), awb_domain::profile::ThrottlePolicy::default());
+    let client = ReqwestMwClient::new(wiki.clone(), awb_domain::profile::ThrottlePolicy::default())
+        .context("Failed to create HTTP client")?;
 
     print!("Authenticating... ");
     client.login_bot_password(&username, &password)
@@ -29,7 +30,8 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
     println!("{}", style("✓").green().bold());
 
     // Store credentials
-    let cred_store = InMemoryCredentialStore::new();
+    let cred_store = FileCredentialStore::new()
+        .context("Failed to initialize credential store")?;
     cred_store.set_password(&profile, &password)
         .context("Failed to store credentials")?;
 
@@ -37,8 +39,7 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
     println!("{}", style("Login successful!").green().bold());
     println!("Credentials stored under profile: {}", style(&profile).yellow());
     println!();
-    println!("Note: This session uses in-memory storage.");
-    println!("For persistent storage, integrate with OS keychain.");
+    println!("Credentials saved to: ~/.awb-rs/credentials.json");
 
     Ok(())
 }

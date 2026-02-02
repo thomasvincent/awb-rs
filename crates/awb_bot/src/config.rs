@@ -48,42 +48,49 @@ impl BotConfig {
     }
 
     /// Set maximum number of edits
+    #[must_use]
     pub fn with_max_edits(mut self, max: u32) -> Self {
         self.max_edits = Some(max);
         self
     }
 
     /// Set maximum runtime
+    #[must_use]
     pub fn with_max_runtime(mut self, duration: Duration) -> Self {
         self.max_runtime = Some(duration);
         self
     }
 
     /// Set whether to skip pages with no changes
+    #[must_use]
     pub fn with_skip_no_change(mut self, skip: bool) -> Self {
         self.skip_no_change = skip;
         self
     }
 
     /// Set whether to skip pages with warnings
+    #[must_use]
     pub fn with_skip_on_warning(mut self, skip: bool) -> Self {
         self.skip_on_warning = skip;
         self
     }
 
     /// Set emergency stop file path
+    #[must_use]
     pub fn with_emergency_stop_file(mut self, path: PathBuf) -> Self {
         self.emergency_stop_file = path;
         self
     }
 
     /// Set log interval
+    #[must_use]
     pub fn with_log_every_n(mut self, n: u32) -> Self {
         self.log_every_n = n;
         self
     }
 
     /// Enable dry-run mode
+    #[must_use]
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
         self

@@ -3,6 +3,7 @@ use crate::plugin_trait::{Plugin, PluginType};
 use crate::sandbox::SandboxConfig;
 use mlua::{Lua, Value};
 use std::path::Path;
+use std::sync::OnceLock;
 use tracing::debug;
 
 /// A plugin that executes Lua scripts to transform wikitext
@@ -11,6 +12,7 @@ pub struct LuaPlugin {
     description: String,
     lua: Lua,
     config: SandboxConfig,
+    instruction_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl LuaPlugin {
@@ -62,6 +64,7 @@ impl LuaPlugin {
             description,
             lua,
             config,
+            instruction_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
     }
 
@@ -69,23 +72,33 @@ impl LuaPlugin {
     fn apply_sandbox(lua: &Lua) -> Result<()> {
         let globals = lua.globals();
 
-        // Remove dangerous modules
-        for module in &["os", "io", "debug", "package", "dofile", "loadfile", "require"] {
+        // Remove dangerous modules and functions
+        for module in &[
+            "os", "io", "debug", "package", "dofile", "loadfile", "require",
+            "load", "loadstring", "collectgarbage", "rawget", "rawset",
+            "rawequal", "rawlen", "getmetatable", "setmetatable"
+        ] {
             globals.set(*module, Value::Nil)?;
         }
 
-        debug!("Applied Lua sandbox: removed os, io, debug, package modules");
+        debug!("Applied Lua sandbox: removed dangerous modules and functions");
         Ok(())
     }
 
     /// Add MediaWiki-specific helper functions to the Lua environment
     fn add_mw_helpers(lua: &Lua) -> Result<()> {
+        static TITLE_REGEX: OnceLock<regex::Regex> = OnceLock::new();
+        static REDIRECT_REGEX: OnceLock<regex::Regex> = OnceLock::new();
+        static CATEGORY_REGEX: OnceLock<regex::Regex> = OnceLock::new();
+
         let globals = lua.globals();
         let mw_table = lua.create_table()?;
 
         // mw.title(text) - Extract the page title from wikitext
         let title_fn = lua.create_function(|_, text: String| {
-            let title_regex = regex::Regex::new(r"(?m)^=+\s*(.+?)\s*=+\s*$").unwrap();
+            let title_regex = TITLE_REGEX.get_or_init(|| {
+                regex::Regex::new(r"(?m)^=+\s*(.+?)\s*=+\s*$").unwrap()
+            });
             if let Some(caps) = title_regex.captures(&text) {
                 Ok(caps.get(1).map(|m| m.as_str().to_string()))
             } else {
@@ -96,14 +109,18 @@ impl LuaPlugin {
 
         // mw.is_redirect(text) - Check if page is a redirect
         let redirect_fn = lua.create_function(|_, text: String| {
-            let redirect_regex = regex::Regex::new(r"(?i)^#REDIRECT\s*\[\[").unwrap();
+            let redirect_regex = REDIRECT_REGEX.get_or_init(|| {
+                regex::Regex::new(r"(?i)^#REDIRECT\s*\[\[").unwrap()
+            });
             Ok(redirect_regex.is_match(&text))
         })?;
         mw_table.set("is_redirect", redirect_fn)?;
 
         // mw.categories(text) - Extract all categories from wikitext
         let categories_fn = lua.create_function(|lua, text: String| {
-            let cat_regex = regex::Regex::new(r"\[\[Category:([^\]]+)\]\]").unwrap();
+            let cat_regex = CATEGORY_REGEX.get_or_init(|| {
+                regex::Regex::new(r"\[\[Category:([^\]]+)\]\]").unwrap()
+            });
             let categories: Vec<String> = cat_regex
                 .captures_iter(&text)
                 .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
@@ -125,8 +142,12 @@ impl LuaPlugin {
 
     /// Execute the transform function with instruction count limit
     fn execute_transform(&self, input: &str) -> Result<String> {
+        // Reset counter before each execution
+        self.instruction_counter.store(0, std::sync::atomic::Ordering::Relaxed);
+
         // Set instruction hook if limit is configured
         if let Some(limit) = self.config.instruction_limit {
+            let counter = self.instruction_counter.clone();
             self.lua.set_hook(
                 mlua::HookTriggers {
                     every_nth_instruction: Some(1000),
@@ -135,10 +156,8 @@ impl LuaPlugin {
                 move |_lua, _debug| {
                     // Check if we've exceeded the limit
                     // Note: The hook is called every 1000 instructions
-                    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let count = COUNTER.fetch_add(1000, std::sync::atomic::Ordering::Relaxed);
+                    let count = counter.fetch_add(1000, std::sync::atomic::Ordering::Relaxed);
                     if count > limit {
-                        COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
                         Err(mlua::Error::RuntimeError(
                             "Instruction limit exceeded".to_string(),
                         ))
@@ -177,20 +196,27 @@ impl Plugin for LuaPlugin {
     }
 
     fn transform(&self, input: &str) -> Result<String> {
-        // Execute with timeout (currently using thread::scope for immediate execution)
-        // TODO: Implement proper timeout mechanism with channels or tokio::time
-        let result = std::thread::scope(|s| {
-            let handle = s.spawn(|| self.execute_transform(input));
+        // Execute with timeout using channel and scoped thread
+        let (tx, rx) = std::sync::mpsc::channel();
+        let timeout = self.config.timeout;
 
-            match handle.join() {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let result = self.execute_transform(input);
+                let _ = tx.send(result);
+            });
+
+            // Wait for result with timeout
+            match rx.recv_timeout(timeout) {
                 Ok(result) => result,
-                Err(_) => Err(PluginError::ExecutionFailed(
-                    "Lua thread panicked".to_string(),
-                )),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    Err(PluginError::Timeout(timeout.as_secs()))
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    Err(PluginError::ExecutionFailed("Lua thread panicked".to_string()))
+                }
             }
-        });
-
-        result
+        })
     }
 
     fn plugin_type(&self) -> PluginType {

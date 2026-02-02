@@ -7,6 +7,7 @@ use awb_domain::rules::RuleSet;
 use awb_engine::transform::TransformEngine;
 use awb_engine::general_fixes::FixRegistry;
 use awb_engine::diff_engine;
+use secrecy::SecretString;
 
 // FFI-safe types
 #[derive(Clone)]
@@ -53,7 +54,7 @@ pub enum FfiError {
 struct Session {
     wiki_url: String,
     username: String,
-    password: String,
+    password: Option<SecretString>,
     // In a real implementation, this would hold the API client
     // For now, we'll use a simple in-memory structure
 }
@@ -64,9 +65,11 @@ lazy_static::lazy_static! {
 }
 
 // UniFFI exported functions
-pub fn create_session(wiki_url: String, username: String, password: String) -> SessionHandle {
-    let mut sessions = SESSIONS.lock().unwrap();
-    let mut next_id = NEXT_SESSION_ID.lock().unwrap();
+pub fn create_session(wiki_url: String, username: String, password: String) -> Result<SessionHandle, FfiError> {
+    let mut sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
+    let mut next_id = NEXT_SESSION_ID.lock()
+        .map_err(|_| FfiError::InternalError("Session ID lock poisoned".to_string()))?;
 
     let id = *next_id;
     *next_id += 1;
@@ -74,20 +77,25 @@ pub fn create_session(wiki_url: String, username: String, password: String) -> S
     sessions.insert(id, Session {
         wiki_url,
         username,
-        password,
+        password: Some(SecretString::new(password.into())),
     });
 
-    SessionHandle { id }
+    Ok(SessionHandle { id })
 }
 
 pub fn login(handle: SessionHandle) -> Result<(), FfiError> {
-    let sessions = SESSIONS.lock().unwrap();
-    let _session = sessions
-        .get(&handle.id)
+    let mut sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
+    let session = sessions
+        .get_mut(&handle.id)
         .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
 
     // TODO: Implement actual authentication via awb_mw_api
-    // For now, just return success
+    // Use password here: let _password = session.password.as_ref().map(|p| p.expose_secret());
+
+    // Clear password after authentication completes
+    session.password = None;
+
     Ok(())
 }
 
@@ -96,7 +104,8 @@ pub fn fetch_list(
     source: String,
     query: String,
 ) -> Result<Vec<String>, FfiError> {
-    let sessions = SESSIONS.lock().unwrap();
+    let sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
     let _session = sessions
         .get(&handle.id)
         .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
@@ -111,7 +120,8 @@ pub fn fetch_list(
 }
 
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {
-    let sessions = SESSIONS.lock().unwrap();
+    let sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
     let _session = sessions
         .get(&handle.id)
         .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
@@ -134,7 +144,8 @@ pub fn apply_rules(
     content: String,
     rules_json: String,
 ) -> Result<TransformResult, FfiError> {
-    let sessions = SESSIONS.lock().unwrap();
+    let sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
     let _session = sessions
         .get(&handle.id)
         .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
@@ -183,7 +194,8 @@ pub fn save_page(
     content: String,
     summary: String,
 ) -> Result<(), FfiError> {
-    let sessions = SESSIONS.lock().unwrap();
+    let sessions = SESSIONS.lock()
+        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
     let _session = sessions
         .get(&handle.id)
         .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
@@ -256,7 +268,7 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        );
+        ).unwrap();
         assert!(handle.id > 0);
     }
 
@@ -266,7 +278,7 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        );
+        ).unwrap();
         let result = login(handle);
         assert!(result.is_ok());
     }
@@ -277,7 +289,7 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        );
+        ).unwrap();
         let result = fetch_list(handle, "category".to_string(), "Test".to_string());
         assert!(result.is_ok());
         let list = result.unwrap();
@@ -290,7 +302,7 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        );
+        ).unwrap();
         let result = get_page(handle, "Test Page".to_string());
         assert!(result.is_ok());
         let page = result.unwrap();

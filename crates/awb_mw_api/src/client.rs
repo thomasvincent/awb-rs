@@ -59,16 +59,15 @@ pub struct ReqwestMwClient {
 }
 
 impl ReqwestMwClient {
-    pub fn new(api_url: url::Url, policy: ThrottlePolicy) -> Self {
+    pub fn new(api_url: url::Url, policy: ThrottlePolicy) -> Result<Self, MwApiError> {
         let jar = Arc::new(reqwest::cookie::Jar::default());
         let http = reqwest::ClientBuilder::new()
             .cookie_provider(jar)
             .user_agent("AWB-RS/0.1.0 (https://github.com/thomasvincent/awb-rs)")
             .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("Failed to build HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             http,
             api_url,
             csrf_token: Arc::new(RwLock::new(None)),
@@ -78,11 +77,11 @@ impl ReqwestMwClient {
                 max_retries: policy.max_retries,
                 ..Default::default()
             },
-        }
+        })
     }
 
     /// Apply authentication to a request builder
-    async fn apply_auth(&self, mut builder: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder, MwApiError> {
+    async fn apply_auth(&self, mut builder: reqwest::RequestBuilder, method: &str, url: &str, params: &[(String, String)]) -> Result<reqwest::RequestBuilder, MwApiError> {
         let auth_state = self.auth_state.read().await;
 
         match &*auth_state {
@@ -90,11 +89,12 @@ impl ReqwestMwClient {
                 // BotPassword uses cookies, no additional headers needed
                 Ok(builder)
             }
-            AuthState::OAuth1 { config: _ } => {
+            AuthState::OAuth1 { config } => {
                 // For OAuth 1.0a, we need to sign each request
-                // Extract method and URL from the request (this is a simplified approach)
-                // In practice, we'd need to sign with the actual parameters
+                let config_clone = config.clone();
                 drop(auth_state);
+                let auth_header = crate::oauth::oauth1_sign_request(&config_clone, method, url, params)?;
+                builder = builder.header("Authorization", auth_header);
                 Ok(builder)
             }
             AuthState::OAuth2 { session } => {
@@ -145,6 +145,22 @@ impl MediaWikiClient for ReqwestMwClient {
 
     async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
         let maxlag = self.throttle.maxlag();
+
+        // TODO: Integrate RetryPolicy::execute() here to wrap the HTTP call
+        // Currently RetryPolicy is stored but not used. This creates a gap where
+        // transient network errors or rate limits aren't automatically retried.
+
+        let params = vec![
+            ("action".to_string(), "query".to_string()),
+            ("titles".to_string(), title.display.clone()),
+            ("prop".to_string(), "revisions|info|pageprops".to_string()),
+            ("rvprop".to_string(), "ids|timestamp|content".to_string()),
+            ("rvslots".to_string(), "main".to_string()),
+            ("inprop".to_string(), "protection".to_string()),
+            ("format".to_string(), "json".to_string()),
+            ("maxlag".to_string(), maxlag.to_string()),
+        ];
+
         let builder = self.http.get(self.api_url.as_str())
             .query(&[
                 ("action", "query"),
@@ -157,7 +173,7 @@ impl MediaWikiClient for ReqwestMwClient {
                 ("maxlag", &maxlag.to_string()),
             ]);
 
-        let builder = self.apply_auth(builder).await?;
+        let builder = self.apply_auth(builder, "GET", self.api_url.as_str(), &params).await?;
         let resp: serde_json::Value = builder.send().await?.json().await?;
 
         // Check for API errors
@@ -268,7 +284,7 @@ impl MediaWikiClient for ReqwestMwClient {
 
         let builder = self.http.post(self.api_url.as_str())
             .form(&params);
-        let builder = self.apply_auth(builder).await?;
+        let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
         let resp: serde_json::Value = builder.send().await?.json().await?;
 
         // Check errors
@@ -295,6 +311,15 @@ impl MediaWikiClient for ReqwestMwClient {
     }
 
     async fn parse_wikitext(&self, wikitext: &str, title: &Title) -> Result<String, MwApiError> {
+        let params = vec![
+            ("action".to_string(), "parse".to_string()),
+            ("text".to_string(), wikitext.to_string()),
+            ("title".to_string(), title.display.clone()),
+            ("contentmodel".to_string(), "wikitext".to_string()),
+            ("prop".to_string(), "text".to_string()),
+            ("format".to_string(), "json".to_string()),
+        ];
+
         let builder = self.http.post(self.api_url.as_str())
             .form(&[
                 ("action", "parse"),
@@ -304,7 +329,7 @@ impl MediaWikiClient for ReqwestMwClient {
                 ("prop", "text"),
                 ("format", "json"),
             ]);
-        let builder = self.apply_auth(builder).await?;
+        let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
         let resp: serde_json::Value = builder.send().await?.json().await?;
 
         resp["parse"]["text"]["*"]

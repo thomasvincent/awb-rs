@@ -30,6 +30,9 @@ awb_engine = { path = "../awb_engine" }
 # Regex for helper functions
 regex = { workspace = true }
 
+# Collections
+indexmap = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
 wat = "1.244"
