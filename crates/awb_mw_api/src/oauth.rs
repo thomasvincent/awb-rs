@@ -171,29 +171,70 @@ fn generate_nonce() -> String {
 }
 
 /// Percent-encode a string according to RFC 3986
+/// Only allows unreserved characters (ALPHA, DIGIT, '-', '.', '_', '~')
 fn percent_encode(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+
+    // Define the set of characters that should be percent-encoded
+    // Per RFC 3986, unreserved characters are: ALPHA / DIGIT / "-" / "." / "_" / "~"
+    const FRAGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'`')
+        .add(b'#')
+        .add(b'?')
+        .add(b'{')
+        .add(b'}')
+        .add(b'/')
+        .add(b':')
+        .add(b';')
+        .add(b'=')
+        .add(b'@')
+        .add(b'[')
+        .add(b'\\')
+        .add(b']')
+        .add(b'^')
+        .add(b'|')
+        .add(b'%')
+        .add(b'&')
+        .add(b'+')
+        .add(b',')
+        .add(b'$')
+        .add(b'!')
+        .add(b'\'')
+        .add(b'(')
+        .add(b')')
+        .add(b'*');
+
+    utf8_percent_encode(s, FRAGMENT).to_string()
 }
 
-/// Generate OAuth 2.0 authorization URL
-pub async fn oauth2_authorization_url(config: &OAuth2Config) -> Result<(String, String), MwApiError> {
+/// Generate OAuth 2.0 authorization URL with PKCE
+pub async fn oauth2_authorization_url(config: &OAuth2Config) -> Result<(String, String, String), MwApiError> {
     let client = build_oauth2_client(config)?;
+
+    // Generate PKCE challenge
+    let (pkce_challenge, pkce_verifier) = oauth2::PkceCodeChallenge::new_random_sha256();
 
     let (auth_url, csrf_state) = client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("editpage".to_string()))
         .add_scope(Scope::new("createeditmovepage".to_string()))
+        .set_pkce_challenge(pkce_challenge)
         .url();
 
-    Ok((auth_url.to_string(), csrf_state.secret().clone()))
+    Ok((auth_url.to_string(), csrf_state.secret().clone(), pkce_verifier.secret().clone()))
 }
 
-/// Exchange authorization code for access token
+/// Exchange authorization code for access token with PKCE
 pub async fn oauth2_exchange_code(
     config: &OAuth2Config,
     code: &str,
     expected_state: &str,
     received_state: &str,
+    pkce_verifier: &str,
 ) -> Result<TokenResponse, MwApiError> {
     // Validate CSRF state to prevent attacks
     if expected_state != received_state {
@@ -206,6 +247,7 @@ pub async fn oauth2_exchange_code(
 
     let token_result = client
         .exchange_code(AuthorizationCode::new(code.to_string()))
+        .set_pkce_verifier(oauth2::PkceCodeVerifier::new(pkce_verifier.to_string()))
         .request_async(async_http_client)
         .await
         .map_err(|e| MwApiError::AuthError {
@@ -335,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_percent_encode() {
-        assert_eq!(percent_encode("hello world"), "hello+world");
+        assert_eq!(percent_encode("hello world"), "hello%20world");
         assert_eq!(percent_encode("hello&world"), "hello%26world");
         assert_eq!(percent_encode("100%"), "100%25");
     }

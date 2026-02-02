@@ -13,7 +13,7 @@ pub struct Profile {
     pub throttle_policy: ThrottlePolicy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AuthMethod {
     BotPassword { username: String },
     OAuth1 {
@@ -23,6 +23,32 @@ pub enum AuthMethod {
         access_secret: String,
     },
     OAuth2 { client_id: String, client_secret: String },
+}
+
+impl std::fmt::Debug for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthMethod::BotPassword { username } => {
+                f.debug_struct("BotPassword")
+                    .field("username", username)
+                    .finish()
+            }
+            AuthMethod::OAuth1 { consumer_key, consumer_secret: _, access_token, access_secret: _ } => {
+                f.debug_struct("OAuth1")
+                    .field("consumer_key", consumer_key)
+                    .field("consumer_secret", &"***REDACTED***")
+                    .field("access_token", access_token)
+                    .field("access_secret", &"***REDACTED***")
+                    .finish()
+            }
+            AuthMethod::OAuth2 { client_id, client_secret: _ } => {
+                f.debug_struct("OAuth2")
+                    .field("client_id", client_id)
+                    .field("client_secret", &"***REDACTED***")
+                    .finish()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

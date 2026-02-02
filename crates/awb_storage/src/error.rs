@@ -12,6 +12,8 @@ pub enum StorageError {
     SchemaMismatch { found: u32, expected: u32 },
     #[error("Not found: {0}")]
     NotFound(String),
+    #[error("Invalid session ID: {0}")]
+    InvalidSessionId(String),
 }
 
 impl From<serde_json::Error> for StorageError {
