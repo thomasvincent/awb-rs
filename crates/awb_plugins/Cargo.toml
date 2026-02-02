@@ -8,10 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 # Lua integration
-mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }
+mlua = { workspace = true }
 
 # WASM runtime
-wasmtime = "27"
+wasmtime = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
