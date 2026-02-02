@@ -19,8 +19,9 @@ impl WasmPlugin {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
+            .file_name()
+            .and_then(|n| n.to_str())
+            .or_else(|| path.file_stem().and_then(|s| s.to_str()))
             .unwrap_or("unknown")
             .to_string();
 

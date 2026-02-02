@@ -295,7 +295,11 @@ impl MediaWikiClient for ReqwestMwClient {
                     base_rev: awb_domain::types::RevisionId(0),
                     current_rev: awb_domain::types::RevisionId(0),
                 }),
-                "badtoken" => Err(MwApiError::BadToken),
+                "badtoken" => {
+                    // Clear CSRF token so next retry will fetch a fresh one
+                    *self.csrf_token.write().await = None;
+                    Err(MwApiError::BadToken)
+                }
                 "maxlag" => Err(MwApiError::MaxLag { retry_after: 5 }),
                 _ => Err(MwApiError::ApiError { code, info }),
             };

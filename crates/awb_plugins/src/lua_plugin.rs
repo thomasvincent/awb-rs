@@ -24,8 +24,9 @@ impl LuaPlugin {
         })?;
 
         let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
+            .file_name()
+            .and_then(|n| n.to_str())
+            .or_else(|| path.file_stem().and_then(|s| s.to_str()))
             .unwrap_or("unknown")
             .to_string();
 
@@ -204,18 +205,32 @@ impl Plugin for LuaPlugin {
     fn transform(&self, input: &str) -> Result<String> {
         // Execute with cancellation flag
         let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancel_flag_thread = cancel_flag.clone();
+        let done_flag_thread = done_flag.clone();
         let cancel_flag_exec = cancel_flag.clone();
         let timeout = self.config.timeout;
 
         // Spawn a timeout handler thread that sets the cancellation flag
         std::thread::spawn(move || {
-            std::thread::sleep(timeout);
-            cancel_flag_thread.store(true, std::sync::atomic::Ordering::Relaxed);
+            let check_interval = std::time::Duration::from_millis(100);
+            let start = std::time::Instant::now();
+            loop {
+                std::thread::sleep(check_interval);
+                if done_flag_thread.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                if start.elapsed() >= timeout {
+                    cancel_flag_thread.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+            }
         });
 
         // Execute in current thread - the Lua hook will check cancel_flag
-        self.execute_transform(input, cancel_flag_exec)
+        let result = self.execute_transform(input, cancel_flag_exec);
+        done_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        result
     }
 
     fn plugin_type(&self) -> PluginType {
