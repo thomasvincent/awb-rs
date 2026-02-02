@@ -1,3 +1,4 @@
+use fs2::FileExt;
 use keyring::Entry;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -153,7 +154,12 @@ impl FileCredentialStore {
         #[cfg(not(unix))]
         {
             let tmp_path = self.credentials_path.with_extension("tmp");
-            std::fs::write(&tmp_path, json)?;
+            std::fs::write(&tmp_path, &json)?;
+            tracing::warn!(
+                path = %self.credentials_path.display(),
+                "File permissions could not be restricted to owner-only on this platform; \
+                 credentials file may be readable by other users"
+            );
             std::fs::rename(&tmp_path, &self.credentials_path)?;
         }
 
@@ -174,16 +180,42 @@ impl CredentialPort for FileCredentialStore {
     }
 
     fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError> {
+        // Ensure parent directory exists before creating lock file
+        if let Some(parent) = self.credentials_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let lock_path = self.credentials_path.with_extension("lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
+
         let mut credentials = self.load()?;
         credentials.insert(profile_id.to_string(), password.to_string());
         self.save(&credentials)?;
+        // lock released on drop
         Ok(())
     }
 
     fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError> {
+        // Ensure parent directory exists before creating lock file
+        if let Some(parent) = self.credentials_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let lock_path = self.credentials_path.with_extension("lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
+
         let mut credentials = self.load()?;
         credentials.remove(profile_id);
         self.save(&credentials)?;
+        // lock released on drop
         Ok(())
     }
 }

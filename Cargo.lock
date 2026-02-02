@@ -283,6 +283,7 @@ dependencies = [
  "awb_telemetry",
  "chrono",
  "lazy_static",
+ "parking_lot",
  "secrecy",
  "serde_json",
  "thiserror 2.0.18",
@@ -339,6 +340,7 @@ name = "awb_security"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "fs2",
  "keyring",
  "serde",
  "serde_json",
@@ -354,6 +356,7 @@ dependencies = [
  "async-trait",
  "awb_domain",
  "chrono",
+ "fs2",
  "serde",
  "serde_json",
  "tempfile",
@@ -1221,6 +1224,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88a41f105fe1d5b6b34b2055e3dc59bb79b46b48b2040b9e6c7b4b5de097aa41"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 use crate::error::StorageError;
 use awb_domain::profile::Profile;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -155,9 +156,24 @@ impl TomlConfigStore {
 
     pub fn save_preferences(&self, prefs: &Preferences) -> Result<(), StorageError> {
         prefs.validate()?;
+
+        // Ensure parent directory exists before creating lock file
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let lock_path = self.path.with_extension("lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
+
         let mut config = self.load_file()?;
         config.preferences = prefs.clone();
-        self.save_file(&config)
+        self.save_file(&config)?;
+        // lock released on drop
+        Ok(())
     }
 
     pub fn load_profile(&self, id: &str) -> Result<Profile, StorageError> {
@@ -170,9 +186,23 @@ impl TomlConfigStore {
     }
 
     pub fn save_profile(&self, profile: &Profile) -> Result<(), StorageError> {
+        // Ensure parent directory exists before creating lock file
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let lock_path = self.path.with_extension("lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
+
         let mut config = self.load_file()?;
         config.profiles.insert(profile.id.clone(), profile.clone());
-        self.save_file(&config)
+        self.save_file(&config)?;
+        // lock released on drop
+        Ok(())
     }
 
     pub fn list_profiles(&self) -> Result<Vec<Profile>, StorageError> {

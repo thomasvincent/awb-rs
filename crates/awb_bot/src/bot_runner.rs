@@ -252,6 +252,14 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 )));
             }
 
+            // Warn if MediaWiki returned "Success" without creating a new revision
+            if response.new_revid.is_none() {
+                tracing::warn!(
+                    "Page {} returned Success but no new_revid - edit may not have been saved",
+                    page_title
+                );
+            }
+
             let duration = page_start.elapsed().as_millis() as u64;
             self.emit_telemetry(TelemetryEvent::PageProcessed {
                 title: page_title.to_string(),

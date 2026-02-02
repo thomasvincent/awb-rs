@@ -64,6 +64,9 @@ impl FixRegistry {
         ctx: &FixContext,
         enabled_ids: &HashSet<String>,
     ) -> Vec<(String, String)> {
+        // NOTE: Each changed text is cloned for the return value. If callers only need
+        // the final text and the list of changed IDs (not intermediate states), this
+        // could be optimized to collect only IDs and return (final_text, Vec<String>).
         let mut results = Vec::new();
         let mut current = text.to_string();
         for module in &self.modules {
@@ -113,6 +116,9 @@ impl FixModule for WhitespaceCleanup {
 
         // Single-pass: normalize line endings, trim trailing whitespace per line,
         // cap consecutive blank lines at 2, ensure single trailing newline.
+        // SAFETY: We only split on ASCII bytes 0x0A (\n) and 0x0D (\r), which cannot
+        // appear as UTF-8 continuation bytes (those are 0x80-0xBF), so byte-level
+        // splitting is safe for UTF-8 text.
         let mut result = String::with_capacity(text.len());
         let mut consecutive_blanks: u32 = 0;
         let mut line_start = 0;
@@ -522,6 +528,9 @@ impl FixModule for DuplicateWikilinkRemoval {
             regex::Regex::new(r"^={2,6}\s").expect("known-valid regex")
         });
 
+        // Record the exact number of trailing newlines
+        let trailing_newlines = text.chars().rev().take_while(|&c| c == '\n').count();
+
         let mut seen_targets = HashSet::new();
         let mut result = String::with_capacity(text.len());
 
@@ -554,9 +563,14 @@ impl FixModule for DuplicateWikilinkRemoval {
             result.push('\n');
         }
 
-        // Remove the extra trailing newline we added
-        if !text.is_empty() && !text.ends_with('\n') {
+        // Remove all trailing newlines
+        while result.ends_with('\n') {
             result.pop();
+        }
+
+        // Re-append exactly the original count of trailing newlines
+        for _ in 0..trailing_newlines {
+            result.push('\n');
         }
 
         if result == text {
@@ -583,7 +597,6 @@ impl FixModule for UnicodeNormalization {
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static ENDASH_RE: OnceLock<regex::Regex> = OnceLock::new();
-        static TEMPLATE_RE: OnceLock<regex::Regex> = OnceLock::new();
 
         let mut result = text.to_string();
 
@@ -615,20 +628,38 @@ impl FixModule for UnicodeNormalization {
             .get_or_init(|| regex::Regex::new(r"(\d)\s*[–—]\s*(\d)").expect("known-valid regex"));
         result = endash_re.replace_all(&result, "$1–$2").into_owned();
 
-        // Fix curly quotes to straight quotes in template parameters
-        // Only inside {{ }} templates to avoid changing prose
-        // Note: This regex does not handle nested templates (e.g. {{cite|param={{nested}}}})
-        // For simplicity, it only matches non-nested single-level templates
-        let template_re = TEMPLATE_RE
-            .get_or_init(|| regex::Regex::new(r"\{\{[^}]+\}\}").expect("known-valid regex"));
-        result = template_re
-            .replace_all(&result, |caps: &regex::Captures| {
-                let template = &caps[0];
-                template
-                    .replace(['\u{201C}', '\u{201D}'], "\"") // Left/right double quotes
-                    .replace(['\u{2018}', '\u{2019}'], "'") // Left/right single quotes
-            })
-            .into_owned();
+        // Fix curly quotes to straight quotes INSIDE templates only (template-safe)
+        // Use brace-depth tracking to avoid modifying prose quotes
+        let chars: Vec<char> = result.chars().collect();
+        let mut new_result = String::with_capacity(result.len());
+        let mut brace_depth = 0;
+
+        for &c in &chars {
+            match c {
+                '{' => {
+                    brace_depth += 1;
+                    new_result.push(c);
+                }
+                '}' => {
+                    if brace_depth > 0 {
+                        brace_depth -= 1;
+                    }
+                    new_result.push(c);
+                }
+                '\u{201C}' | '\u{201D}' if brace_depth > 0 => {
+                    // Left/right double curly quotes -> straight double quote (inside templates only)
+                    new_result.push('"');
+                }
+                '\u{2018}' | '\u{2019}' if brace_depth > 0 => {
+                    // Left/right single curly quotes -> straight single quote (inside templates only)
+                    new_result.push('\'');
+                }
+                _ => {
+                    new_result.push(c);
+                }
+            }
+        }
+        result = new_result;
 
         if result == text {
             Cow::Borrowed(text)

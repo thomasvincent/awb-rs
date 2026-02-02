@@ -189,9 +189,12 @@ impl LuaPlugin {
             globals.set(*module, Value::Nil)?;
         }
 
-        // Remove string.dump specifically
+        // Remove dangerous string functions
         let string_table: mlua::Table = globals.get("string")?;
         string_table.set("dump", Value::Nil)?;
+        string_table.set("rep", Value::Nil)?;
+        string_table.set("byte", Value::Nil)?;
+        string_table.set("char", Value::Nil)?;
 
         debug!("Applied Lua sandbox: removed dangerous modules and functions");
         Ok(())

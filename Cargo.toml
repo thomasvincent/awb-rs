@@ -78,6 +78,7 @@ uniffi = { version = "0.28", features = ["cli"] }
 
 # Storage
 toml = "0.8"
+fs2 = "0.4"
 
 # Logging
 tracing = "0.1"

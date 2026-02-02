@@ -5,9 +5,10 @@ use awb_domain::types::*;
 use awb_engine::diff_engine;
 use awb_engine::general_fixes::FixRegistry;
 use awb_engine::transform::TransformEngine;
+use parking_lot::Mutex;
 use secrecy::SecretString;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // FFI-safe types
 #[derive(Clone)]
@@ -79,12 +80,8 @@ pub fn create_session(
         return Err(FfiError::ParseError("wiki_url cannot be empty".to_string()));
     }
 
-    let mut sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
-    let mut next_id = NEXT_SESSION_ID
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let mut sessions = SESSIONS.lock();
+    let mut next_id = NEXT_SESSION_ID.lock();
 
     let id = *next_id;
     *next_id = next_id.checked_add(1).ok_or(FfiError::EngineError("session ID overflow".into()))?;
@@ -102,15 +99,13 @@ pub fn create_session(
 }
 
 pub fn destroy_session(handle: SessionHandle) -> Result<(), FfiError> {
-    let mut sessions = SESSIONS.lock().map_err(|_| FfiError::LockPoisoned)?;
+    let mut sessions = SESSIONS.lock();
     sessions.remove(&handle.id).ok_or(FfiError::SessionNotFound)?;
     Ok(())
 }
 
 pub fn login(handle: SessionHandle) -> Result<(), FfiError> {
-    let mut sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let mut sessions = SESSIONS.lock();
     let session = sessions.get_mut(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual authentication via awb_mw_api
@@ -127,9 +122,7 @@ pub fn fetch_list(
     source: String,
     query: String,
 ) -> Result<Vec<String>, FfiError> {
-    let sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let sessions = SESSIONS.lock();
     let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual list fetching via awb_mw_api
@@ -142,9 +135,7 @@ pub fn fetch_list(
 }
 
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {
-    let sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let sessions = SESSIONS.lock();
     let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual page fetching via awb_mw_api
@@ -165,9 +156,7 @@ pub fn apply_rules(
     content: String,
     rules_json: String,
 ) -> Result<TransformResult, FfiError> {
-    let sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let sessions = SESSIONS.lock();
     let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // Parse rules from JSON
@@ -214,9 +203,7 @@ pub fn save_page(
     content: String,
     summary: String,
 ) -> Result<(), FfiError> {
-    let sessions = SESSIONS
-        .lock()
-        .map_err(|_| FfiError::LockPoisoned)?;
+    let sessions = SESSIONS.lock();
     let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual page saving via awb_mw_api
