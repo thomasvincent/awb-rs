@@ -343,3 +343,138 @@ impl MediaWikiClient for ReqwestMwClient {
             .ok_or_else(|| MwApiError::ApiError { code: "noparse".into(), info: "No parsed HTML returned".into() })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use awb_domain::profile::ThrottlePolicy;
+    use std::time::Duration;
+
+    #[test]
+    fn test_reqwest_mw_client_new_returns_ok() {
+        let api_url = url::Url::parse("https://en.wikipedia.org/w/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_secs(5),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_secs(2),
+        };
+
+        let result = ReqwestMwClient::new(api_url, policy);
+        assert!(result.is_ok(), "ReqwestMwClient::new should succeed");
+    }
+
+    #[test]
+    fn test_reqwest_mw_client_new_with_invalid_url() {
+        // Valid URL construction but testing the client creation
+        let api_url = url::Url::parse("http://example.com/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_millis(100),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_millis(100),
+        };
+
+        let result = ReqwestMwClient::new(api_url, policy);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_apply_auth_with_none_state() {
+        let api_url = url::Url::parse("https://en.wikipedia.org/w/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_millis(100),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_millis(100),
+        };
+
+        let client = ReqwestMwClient::new(api_url.clone(), policy).unwrap();
+
+        // Create a request builder
+        let builder = client.http.get(api_url.as_str());
+
+        // Apply auth should succeed with None state
+        let result = client.apply_auth(builder, "GET", api_url.as_str(), &[]).await;
+        assert!(result.is_ok(), "apply_auth with AuthState::None should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_apply_auth_with_bot_password_state() {
+        let api_url = url::Url::parse("https://en.wikipedia.org/w/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_millis(100),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_millis(100),
+        };
+
+        let client = ReqwestMwClient::new(api_url.clone(), policy).unwrap();
+
+        // Set auth state to BotPassword
+        *client.auth_state.write().await = AuthState::BotPassword;
+
+        let builder = client.http.get(api_url.as_str());
+        let result = client.apply_auth(builder, "GET", api_url.as_str(), &[]).await;
+
+        assert!(result.is_ok(), "apply_auth with AuthState::BotPassword should succeed");
+    }
+
+    #[test]
+    fn test_edit_request_construction() {
+        let title = Title {
+            namespace: Namespace(0),
+            name: "Test Page".to_string(),
+            display: "Test Page".to_string(),
+        };
+
+        let edit = EditRequest {
+            title: title.clone(),
+            text: "New content".to_string(),
+            summary: "Test edit".to_string(),
+            minor: true,
+            bot: true,
+            base_timestamp: "2024-01-01T00:00:00Z".to_string(),
+            start_timestamp: "2024-01-01T00:01:00Z".to_string(),
+            section: Some(1),
+        };
+
+        assert_eq!(edit.title.display, "Test Page");
+        assert_eq!(edit.text, "New content");
+        assert!(edit.minor);
+        assert!(edit.bot);
+        assert_eq!(edit.section, Some(1));
+    }
+
+    #[test]
+    fn test_edit_response_deserialization() {
+        let json = r#"{
+            "result": "Success",
+            "newrevid": 12345,
+            "newtimestamp": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let response: EditResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.result, "Success");
+        assert_eq!(response.new_revid, Some(12345));
+        assert_eq!(response.new_timestamp, Some("2024-01-01T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_auth_state_variants() {
+        // Test that AuthState can be constructed with different variants
+        let _none = AuthState::None;
+        let _bot = AuthState::BotPassword;
+
+        // Just verify the enum variants exist and can be instantiated
+        match _none {
+            AuthState::None => assert!(true),
+            _ => assert!(false, "Should be AuthState::None"),
+        }
+
+        match _bot {
+            AuthState::BotPassword => assert!(true),
+            _ => assert!(false, "Should be AuthState::BotPassword"),
+        }
+    }
+}

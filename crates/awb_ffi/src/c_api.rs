@@ -13,7 +13,7 @@ use std::ffi::CString;
 /// Returns the library version string. Caller must free with awb_free_string().
 #[unsafe(no_mangle)]
 pub extern "C" fn awb_version() -> *const c_char {
-    let version = CString::new(env!("CARGO_PKG_VERSION")).unwrap();
+    let version = CString::new(env!("CARGO_PKG_VERSION")).expect("version has no null bytes");
     version.into_raw()
 }
 

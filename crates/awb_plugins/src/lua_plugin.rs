@@ -98,7 +98,7 @@ impl LuaPlugin {
         // mw.title(text) - Extract the page title from wikitext
         let title_fn = lua.create_function(|_, text: String| {
             let title_regex = TITLE_REGEX.get_or_init(|| {
-                regex::Regex::new(r"(?m)^=+\s*(.+?)\s*=+\s*$").unwrap()
+                regex::Regex::new(r"(?m)^=+\s*(.+?)\s*=+\s*$").expect("known-valid regex")
             });
             if let Some(caps) = title_regex.captures(&text) {
                 Ok(caps.get(1).map(|m| m.as_str().to_string()))
@@ -111,7 +111,7 @@ impl LuaPlugin {
         // mw.is_redirect(text) - Check if page is a redirect
         let redirect_fn = lua.create_function(|_, text: String| {
             let redirect_regex = REDIRECT_REGEX.get_or_init(|| {
-                regex::Regex::new(r"(?i)^#REDIRECT\s*\[\[").unwrap()
+                regex::Regex::new(r"(?i)^#REDIRECT\s*\[\[").expect("known-valid regex")
             });
             Ok(redirect_regex.is_match(&text))
         })?;
@@ -120,7 +120,7 @@ impl LuaPlugin {
         // mw.categories(text) - Extract all categories from wikitext
         let categories_fn = lua.create_function(|lua, text: String| {
             let cat_regex = CATEGORY_REGEX.get_or_init(|| {
-                regex::Regex::new(r"\[\[Category:([^\]]+)\]\]").unwrap()
+                regex::Regex::new(r"\[\[Category:([^\]]+)\]\]").expect("known-valid regex")
             });
             let categories: Vec<String> = cat_regex
                 .captures_iter(&text)

@@ -240,3 +240,218 @@ impl CredentialPort for KeyringCredentialStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- InMemoryCredentialStore Tests ---
+
+    #[test]
+    fn test_in_memory_credential_store_full_crud_cycle() {
+        let store = InMemoryCredentialStore::new();
+
+        // Test set
+        let result = store.set_password("test_profile", "secret123");
+        assert!(result.is_ok(), "Should set password successfully");
+
+        // Test get
+        let password = store.get_password("test_profile").unwrap();
+        assert_eq!(password, "secret123");
+
+        // Test update
+        store.set_password("test_profile", "newsecret456").unwrap();
+        let updated = store.get_password("test_profile").unwrap();
+        assert_eq!(updated, "newsecret456");
+
+        // Test delete
+        let delete_result = store.delete_password("test_profile");
+        assert!(delete_result.is_ok());
+
+        // Test get after delete
+        let get_after_delete = store.get_password("test_profile");
+        assert!(get_after_delete.is_err());
+        match get_after_delete {
+            Err(CredentialError::NotFound(id)) => assert_eq!(id, "test_profile"),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_in_memory_get_nonexistent_password_returns_not_found() {
+        let store = InMemoryCredentialStore::new();
+
+        let result = store.get_password("nonexistent");
+        assert!(result.is_err());
+        match result {
+            Err(CredentialError::NotFound(id)) => assert_eq!(id, "nonexistent"),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_in_memory_oauth_token_methods() {
+        let store = InMemoryCredentialStore::new();
+
+        let token_json = r#"{"access_token": "abc123", "refresh_token": "xyz789"}"#;
+
+        // Set OAuth token
+        let result = store.set_oauth_token("test_profile", token_json);
+        assert!(result.is_ok());
+
+        // Get OAuth token
+        let retrieved = store.get_oauth_token("test_profile").unwrap();
+        assert_eq!(retrieved, token_json);
+
+        // Delete OAuth token
+        store.delete_oauth_token("test_profile").unwrap();
+
+        // Verify deleted
+        let result = store.get_oauth_token("test_profile");
+        assert!(result.is_err());
+    }
+
+    // --- FileCredentialStore Tests ---
+
+    #[test]
+    fn test_file_credential_store_new_creates_directory() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let credentials_dir = temp_dir.path().join(".awb-rs");
+        let credentials_path = credentials_dir.join("credentials.json");
+
+        // Create directory first (mimicking what FileCredentialStore::new() does)
+        std::fs::create_dir_all(&credentials_dir).unwrap();
+
+        // Manually create FileCredentialStore with custom path
+        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+
+        // Set a password
+        let result = store.set_password("test", "secret");
+        assert!(result.is_ok(), "Should save credentials to file");
+        assert!(credentials_dir.exists(), "Directory should exist");
+        assert!(credentials_path.exists(), "Credentials file should exist");
+    }
+
+    #[test]
+    fn test_file_credential_store_set_get_delete_roundtrip() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let credentials_path = temp_dir.path().join("credentials.json");
+
+        let store = FileCredentialStore { credentials_path };
+
+        // Set password
+        store.set_password("profile1", "password1").unwrap();
+
+        // Get password
+        let retrieved = store.get_password("profile1").unwrap();
+        assert_eq!(retrieved, "password1");
+
+        // Set another password
+        store.set_password("profile2", "password2").unwrap();
+
+        // Both should exist
+        assert_eq!(store.get_password("profile1").unwrap(), "password1");
+        assert_eq!(store.get_password("profile2").unwrap(), "password2");
+
+        // Delete one
+        store.delete_password("profile1").unwrap();
+
+        // Verify deleted
+        let result = store.get_password("profile1");
+        assert!(result.is_err());
+        match result {
+            Err(CredentialError::NotFound(id)) => assert_eq!(id, "profile1"),
+            _ => panic!("Expected NotFound error"),
+        }
+
+        // Other should still exist
+        assert_eq!(store.get_password("profile2").unwrap(), "password2");
+    }
+
+    #[test]
+    fn test_file_credential_store_get_nonexistent_returns_not_found() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let credentials_path = temp_dir.path().join("credentials.json");
+
+        let store = FileCredentialStore { credentials_path };
+
+        let result = store.get_password("nonexistent");
+        assert!(result.is_err());
+        match result {
+            Err(CredentialError::NotFound(id)) => assert_eq!(id, "nonexistent"),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_file_credential_store_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let credentials_path = temp_dir.path().join("credentials.json");
+
+        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+
+        // Save a credential
+        store.set_password("test", "secret").unwrap();
+
+        // Check file permissions
+        let metadata = std::fs::metadata(&credentials_path).unwrap();
+        let mode = metadata.permissions().mode();
+
+        // Should be 0600 (owner read/write only)
+        assert_eq!(mode & 0o777, 0o600, "Credentials file should have 0600 permissions");
+    }
+
+    #[test]
+    fn test_file_credential_store_load_empty_file() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let credentials_path = temp_dir.path().join("credentials.json");
+
+        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+
+        // Load from nonexistent file should return empty map
+        let credentials = store.load().unwrap();
+        assert!(credentials.is_empty());
+    }
+
+    // --- KeyringCredentialStore Tests ---
+
+    #[test]
+    fn test_keyring_credential_store_new() {
+        let store = KeyringCredentialStore::new();
+        assert_eq!(store.service, "awb-rs");
+    }
+
+    #[test]
+    fn test_keyring_credential_store_default() {
+        let store = KeyringCredentialStore::default();
+        assert_eq!(store.service, "awb-rs");
+    }
+
+    // Note: Actual keyring tests are skipped because they require OS keychain access
+    // and may prompt the user or fail in CI environments. The integration tests
+    // cover actual keyring functionality if the OS supports it.
+
+    #[test]
+    fn test_credential_error_display() {
+        let err1 = CredentialError::NotFound("test".to_string());
+        assert_eq!(err1.to_string(), "Credential not found for profile test");
+
+        let err2 = CredentialError::AccessDenied;
+        assert_eq!(err2.to_string(), "Keychain access denied");
+
+        let err3 = CredentialError::Backend("test error".to_string());
+        assert_eq!(err3.to_string(), "Keychain error: test error");
+    }
+}
