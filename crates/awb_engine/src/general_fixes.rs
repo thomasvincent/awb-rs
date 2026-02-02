@@ -31,6 +31,10 @@ impl FixRegistry {
                 Box::new(HtmlToWikitext),
                 Box::new(TrailingWhitespace),
                 Box::new(CategorySorting),
+                Box::new(CitationFormatting),
+                Box::new(DuplicateWikilinkRemoval),
+                Box::new(UnicodeNormalization),
+                Box::new(DefaultSortFix),
             ],
         }
     }
@@ -165,4 +169,171 @@ impl FixModule for CategorySorting {
         result = result.replace('\x00', "");
         result
     }
+}
+
+pub struct CitationFormatting;
+impl FixModule for CitationFormatting {
+    fn id(&self) -> &str { "citation_formatting" }
+    fn display_name(&self) -> &str { "Citation Formatting" }
+    fn category(&self) -> &str { "Citations" }
+    fn description(&self) -> &str { "Fixes common citation template issues: normalizes {{cite web}}/{{cite news}}/{{cite journal}}, renames deprecated parameters" }
+    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        let mut result = text.to_string();
+
+        // Normalize citation template names to lowercase
+        let cite_re = regex::Regex::new(r"(?i)\{\{(cite\s+(?:web|news|journal|book|conference))").unwrap();
+        result = cite_re.replace_all(&result, |caps: &regex::Captures| {
+            format!("{{{{{}", caps[1].to_lowercase().replace(' ', " "))
+        }).into_owned();
+
+        // Fix deprecated parameter names
+        // accessdate → access-date
+        let accessdate_re = regex::Regex::new(r"(?m)(\|\s*)accessdate(\s*=)").unwrap();
+        result = accessdate_re.replace_all(&result, "${1}access-date${2}").into_owned();
+
+        // deadurl → url-status
+        let deadurl_re = regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:yes|true)").unwrap();
+        result = deadurl_re.replace_all(&result, "${1}url-status${2}dead").into_owned();
+        let deadurl_no_re = regex::Regex::new(r"(?m)(\|\s*)deadurl(\s*=\s*)(?:no|false)").unwrap();
+        result = deadurl_no_re.replace_all(&result, "${1}url-status${2}live").into_owned();
+
+        // Ensure consistent pipe separators (no spaces before pipes)
+        let pipe_re = regex::Regex::new(r"(?m)\s+(\|)").unwrap();
+        result = pipe_re.replace_all(&result, " $1").into_owned();
+
+        result
+    }
+}
+
+pub struct DuplicateWikilinkRemoval;
+impl FixModule for DuplicateWikilinkRemoval {
+    fn id(&self) -> &str { "duplicate_wikilink_removal" }
+    fn display_name(&self) -> &str { "Duplicate Wikilink Removal" }
+    fn category(&self) -> &str { "Links" }
+    fn description(&self) -> &str { "Removes duplicate wikilinks, keeping only first occurrence" }
+    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        use std::collections::HashSet;
+
+        let link_re = regex::Regex::new(r"\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]").unwrap();
+        let mut seen_targets = HashSet::new();
+
+        link_re.replace_all(text, |caps: &regex::Captures| {
+            let target = caps.get(1).unwrap().as_str();
+            let display = caps.get(2).map(|m| m.as_str()).unwrap_or(target);
+
+            // Normalize target for comparison (case-insensitive, trim whitespace)
+            let normalized_target = target.trim().to_lowercase();
+
+            if seen_targets.contains(&normalized_target) {
+                // Duplicate link - replace with plain display text
+                display.to_string()
+            } else {
+                // First occurrence - keep the link
+                seen_targets.insert(normalized_target);
+                caps[0].to_string()
+            }
+        }).into_owned()
+    }
+}
+
+pub struct UnicodeNormalization;
+impl FixModule for UnicodeNormalization {
+    fn id(&self) -> &str { "unicode_normalization" }
+    fn display_name(&self) -> &str { "Unicode Normalization" }
+    fn category(&self) -> &str { "Formatting" }
+    fn description(&self) -> &str { "Fixes common unicode issues: non-breaking spaces, en-dashes in ranges, curly quotes in templates" }
+    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+        let mut result = text.to_string();
+
+        // Replace non-breaking spaces (U+00A0) with regular spaces
+        // But preserve them in special contexts like French punctuation
+        result = result.replace('\u{00A0}', " ");
+
+        // Normalize en-dash (–) in number ranges to consistent format
+        // Match patterns like "2020–2021" or "pp. 10–15"
+        let endash_re = regex::Regex::new(r"(\d)\s*[–—]\s*(\d)").unwrap();
+        result = endash_re.replace_all(&result, "$1–$2").into_owned();
+
+        // Fix curly quotes to straight quotes in template parameters
+        // Only inside {{ }} templates to avoid changing prose
+        let template_re = regex::Regex::new(r"\{\{[^}]+\}\}").unwrap();
+        result = template_re.replace_all(&result, |caps: &regex::Captures| {
+            let template = &caps[0];
+            template
+                .replace('\u{201C}', "\"")  // Left double quote
+                .replace('\u{201D}', "\"")  // Right double quote
+                .replace('\u{2018}', "'")   // Left single quote
+                .replace('\u{2019}', "'")   // Right single quote
+        }).into_owned();
+
+        result
+    }
+}
+
+pub struct DefaultSortFix;
+impl FixModule for DefaultSortFix {
+    fn id(&self) -> &str { "defaultsort_fix" }
+    fn display_name(&self) -> &str { "DEFAULTSORT Fix" }
+    fn category(&self) -> &str { "Categories" }
+    fn description(&self) -> &str { "Adds {{DEFAULTSORT:}} for titles with diacritics if missing" }
+    fn apply(&self, text: &str, ctx: &FixContext) -> String {
+        // Check if DEFAULTSORT already exists
+        let defaultsort_re = regex::Regex::new(r"(?i)\{\{DEFAULTSORT:").unwrap();
+        if defaultsort_re.is_match(text) {
+            return text.to_string();
+        }
+
+        // Check if title contains diacritics or non-ASCII characters
+        let title_name = &ctx.title.name;
+        if title_name.chars().all(|c| c.is_ascii()) {
+            return text.to_string();
+        }
+
+        // Generate ASCII-folded version for sort key
+        let sort_key = ascii_fold(title_name);
+
+        // Find the best position to insert DEFAULTSORT (before categories if present)
+        let cat_re = regex::Regex::new(r"(?m)^(\[\[Category:)").unwrap();
+        if let Some(mat) = cat_re.find(text) {
+            let pos = mat.start();
+            let mut result = String::with_capacity(text.len() + sort_key.len() + 20);
+            result.push_str(&text[..pos]);
+            result.push_str(&format!("{{{{DEFAULTSORT:{}}}}}\n", sort_key));
+            result.push_str(&text[pos..]);
+            result
+        } else {
+            // No categories - add at the end
+            format!("{}\n{{{{DEFAULTSORT:{}}}}}\n", text.trim_end(), sort_key)
+        }
+    }
+}
+
+// Helper function to convert diacritics to ASCII equivalents
+fn ascii_fold(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
+            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'Ā' | 'Ă' | 'Ą' => 'A',
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
+            'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => 'E',
+            'ì' | 'í' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' => 'i',
+            'Ì' | 'Í' | 'Î' | 'Ï' | 'Ĩ' | 'Ī' | 'Ĭ' | 'Į' => 'I',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => 'o',
+            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'Ō' | 'Ŏ' | 'Ő' => 'O',
+            'ù' | 'ú' | 'û' | 'ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+            'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ũ' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => 'U',
+            'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+            'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => 'C',
+            'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
+            'Ñ' | 'Ń' | 'Ņ' | 'Ň' => 'N',
+            'ý' | 'ÿ' | 'ŷ' => 'y',
+            'Ý' | 'Ÿ' | 'Ŷ' => 'Y',
+            'ß' => 's',
+            'æ' => 'a',
+            'Æ' => 'A',
+            'œ' => 'o',
+            'Œ' => 'O',
+            _ => c,
+        })
+        .collect()
 }

@@ -1,0 +1,48 @@
+[package]
+name = "awb_cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "awb-rs"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+awb_domain = { path = "../awb_domain" }
+awb_engine = { path = "../awb_engine" }
+awb_mw_api = { path = "../awb_mw_api" }
+awb_storage = { path = "../awb_storage" }
+awb_security = { path = "../awb_security" }
+awb_telemetry = { path = "../awb_telemetry" }
+
+# CLI
+clap.workspace = true
+dialoguer.workspace = true
+console.workspace = true
+indicatif.workspace = true
+anyhow.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# URL
+url.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Date/time
+chrono.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
