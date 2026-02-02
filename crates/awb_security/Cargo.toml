@@ -1,10 +1,17 @@
 [package]
 name = "awb_security"
-description = "Credential management and secret redaction for AWB-RS"
+description = "Credential management with OS keychain support"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "../../README.md"
+keywords = ["security", "keychain", "credentials", "secrets", "oauth"]
+categories = ["authentication", "os"]
 
 [dependencies]
 thiserror = { workspace = true }

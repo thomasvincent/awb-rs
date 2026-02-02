@@ -1,10 +1,17 @@
 [package]
 name = "awb_telemetry"
-description = "Structured logging and telemetry for AWB-RS"
+description = "Telemetry and logging for AWB-RS"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "../../README.md"
+keywords = ["logging", "telemetry", "tracing", "observability", "metrics"]
+categories = ["development-tools::debugging"]
 
 [dependencies]
 awb_domain = { path = "../awb_domain" }

@@ -22,6 +22,10 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/thomasvincent/awb-rs"
 rust-version = "1.85"
+authors = ["Thomas Vincent"]
+homepage = "https://github.com/thomasvincent/awb-rs"
+documentation = "https://docs.rs/awb_domain"
+readme = "README.md"
 
 [workspace.dependencies]
 # Domain
