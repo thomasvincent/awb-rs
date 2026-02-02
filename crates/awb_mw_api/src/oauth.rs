@@ -166,8 +166,7 @@ pub fn oauth1_sign_request(
 /// Generate a random nonce for OAuth 1.0a
 fn generate_nonce() -> String {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let nonce: u128 = rng.r#gen();
+    let nonce: u128 = rand::rngs::OsRng.r#gen();
     format!("{:x}", nonce)
 }
 

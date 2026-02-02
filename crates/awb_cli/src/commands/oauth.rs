@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use dialoguer::Input;
 use url::Url;
-use awb_security::{CredentialPort, FileCredentialStore};
+use awb_security::{CredentialPort, KeyringCredentialStore};
 
 pub async fn setup(
     wiki: Url,
@@ -37,9 +37,8 @@ pub async fn setup(
         throttle_policy: ThrottlePolicy::default(),
     };
 
-    // Store OAuth credentials
-    let store = FileCredentialStore::new()
-        .context("Failed to initialize credential store")?;
+    // Store OAuth credentials in OS keychain
+    let store = KeyringCredentialStore::new();
     let token_json = serde_json::json!({
         "consumer_key": consumer_key,
         "consumer_secret": consumer_secret,
@@ -49,7 +48,7 @@ pub async fn setup(
     .to_string();
 
     store.set_oauth_token(&profile, &token_json)
-        .context("Failed to store OAuth credentials")?;
+        .context("Failed to store OAuth credentials in keychain")?;
 
     // Save profile
     let profile_path = format!(".awb/profiles/{}.toml", profile);
@@ -119,12 +118,11 @@ pub async fn authorize(
         .await
         .context("Failed to exchange authorization code")?;
 
-    // Store tokens
-    let store = FileCredentialStore::new()
-        .context("Failed to initialize credential store")?;
+    // Store tokens in OS keychain
+    let store = KeyringCredentialStore::new();
     let token_json = serde_json::to_string(&token).context("Failed to serialize token")?;
     store.set_oauth_token(&profile, &token_json)
-        .context("Failed to store OAuth token")?;
+        .context("Failed to store OAuth token in keychain")?;
 
     // Create and save profile
     use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};

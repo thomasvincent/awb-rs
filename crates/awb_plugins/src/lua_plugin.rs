@@ -141,32 +141,38 @@ impl LuaPlugin {
     }
 
     /// Execute the transform function with instruction count limit
-    fn execute_transform(&self, input: &str) -> Result<String> {
+    fn execute_transform(&self, input: &str, cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<String> {
         // Reset counter before each execution
         self.instruction_counter.store(0, std::sync::atomic::Ordering::Relaxed);
 
-        // Set instruction hook if limit is configured
-        if let Some(limit) = self.config.instruction_limit {
-            let counter = self.instruction_counter.clone();
-            self.lua.set_hook(
-                mlua::HookTriggers {
-                    every_nth_instruction: Some(1000),
-                    ..Default::default()
-                },
-                move |_lua, _debug| {
-                    // Check if we've exceeded the limit
-                    // Note: The hook is called every 1000 instructions
+        // Set instruction hook if limit is configured or for cancellation
+        let counter = self.instruction_counter.clone();
+        let limit = self.config.instruction_limit;
+        self.lua.set_hook(
+            mlua::HookTriggers {
+                every_nth_instruction: Some(1000),
+                ..Default::default()
+            },
+            move |_lua, _debug| {
+                // Check cancellation flag first
+                if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(mlua::Error::RuntimeError(
+                        "Execution cancelled due to timeout".to_string(),
+                    ));
+                }
+
+                // Check instruction limit if configured
+                if let Some(limit) = limit {
                     let count = counter.fetch_add(1000, std::sync::atomic::Ordering::Relaxed);
                     if count > limit {
-                        Err(mlua::Error::RuntimeError(
+                        return Err(mlua::Error::RuntimeError(
                             "Instruction limit exceeded".to_string(),
-                        ))
-                    } else {
-                        Ok(mlua::VmState::Continue)
+                        ));
                     }
-                },
-            );
-        }
+                }
+                Ok(mlua::VmState::Continue)
+            },
+        );
 
         // Get the transform function
         let globals = self.lua.globals();
@@ -196,27 +202,20 @@ impl Plugin for LuaPlugin {
     }
 
     fn transform(&self, input: &str) -> Result<String> {
-        // Execute with timeout using channel and scoped thread
-        let (tx, rx) = std::sync::mpsc::channel();
+        // Execute with cancellation flag
+        let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel_flag_thread = cancel_flag.clone();
+        let cancel_flag_exec = cancel_flag.clone();
         let timeout = self.config.timeout;
 
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let result = self.execute_transform(input);
-                let _ = tx.send(result);
-            });
+        // Spawn a timeout handler thread that sets the cancellation flag
+        std::thread::spawn(move || {
+            std::thread::sleep(timeout);
+            cancel_flag_thread.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
 
-            // Wait for result with timeout
-            match rx.recv_timeout(timeout) {
-                Ok(result) => result,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    Err(PluginError::Timeout(timeout.as_secs()))
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    Err(PluginError::ExecutionFailed("Lua thread panicked".to_string()))
-                }
-            }
-        })
+        // Execute in current thread - the Lua hook will check cancel_flag
+        self.execute_transform(input, cancel_flag_exec)
     }
 
     fn plugin_type(&self) -> PluginType {

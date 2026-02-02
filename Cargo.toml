@@ -48,6 +48,7 @@ rand = "0.8"
 # Security
 secrecy = "0.10"
 dirs = "5"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 # Regex
 regex = "1"

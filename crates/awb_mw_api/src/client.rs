@@ -54,7 +54,6 @@ pub struct ReqwestMwClient {
     csrf_token: Arc<RwLock<Option<String>>>,
     auth_state: Arc<RwLock<AuthState>>,
     throttle: ThrottleController,
-    #[allow(dead_code)]
     retry_policy: RetryPolicy,
 }
 
@@ -146,10 +145,6 @@ impl MediaWikiClient for ReqwestMwClient {
     async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
         let maxlag = self.throttle.maxlag();
 
-        // TODO: Integrate RetryPolicy::execute() here to wrap the HTTP call
-        // Currently RetryPolicy is stored but not used. This creates a gap where
-        // transient network errors or rate limits aren't automatically retried.
-
         let params = vec![
             ("action".to_string(), "query".to_string()),
             ("titles".to_string(), title.display.clone()),
@@ -161,20 +156,22 @@ impl MediaWikiClient for ReqwestMwClient {
             ("maxlag".to_string(), maxlag.to_string()),
         ];
 
-        let builder = self.http.get(self.api_url.as_str())
-            .query(&[
-                ("action", "query"),
-                ("titles", &title.display),
-                ("prop", "revisions|info|pageprops"),
-                ("rvprop", "ids|timestamp|content"),
-                ("rvslots", "main"),
-                ("inprop", "protection"),
-                ("format", "json"),
-                ("maxlag", &maxlag.to_string()),
-            ]);
+        let resp: serde_json::Value = self.retry_policy.execute(|| async {
+            let builder = self.http.get(self.api_url.as_str())
+                .query(&[
+                    ("action", "query"),
+                    ("titles", &title.display),
+                    ("prop", "revisions|info|pageprops"),
+                    ("rvprop", "ids|timestamp|content"),
+                    ("rvslots", "main"),
+                    ("inprop", "protection"),
+                    ("format", "json"),
+                    ("maxlag", &maxlag.to_string()),
+                ]);
 
-        let builder = self.apply_auth(builder, "GET", self.api_url.as_str(), &params).await?;
-        let resp: serde_json::Value = builder.send().await?.json().await?;
+            let builder = self.apply_auth(builder, "GET", self.api_url.as_str(), &params).await?;
+            builder.send().await?.json().await.map_err(MwApiError::from)
+        }).await?;
 
         // Check for API errors
         if let Some(error) = resp.get("error") {
@@ -282,10 +279,12 @@ impl MediaWikiClient for ReqwestMwClient {
             params.push(("section".to_string(), section.to_string()));
         }
 
-        let builder = self.http.post(self.api_url.as_str())
-            .form(&params);
-        let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
-        let resp: serde_json::Value = builder.send().await?.json().await?;
+        let resp: serde_json::Value = self.retry_policy.execute(|| async {
+            let builder = self.http.post(self.api_url.as_str())
+                .form(&params);
+            let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
+            builder.send().await?.json().await.map_err(MwApiError::from)
+        }).await?;
 
         // Check errors
         if let Some(error) = resp.get("error") {
@@ -320,17 +319,19 @@ impl MediaWikiClient for ReqwestMwClient {
             ("format".to_string(), "json".to_string()),
         ];
 
-        let builder = self.http.post(self.api_url.as_str())
-            .form(&[
-                ("action", "parse"),
-                ("text", wikitext),
-                ("title", &title.display),
-                ("contentmodel", "wikitext"),
-                ("prop", "text"),
-                ("format", "json"),
-            ]);
-        let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
-        let resp: serde_json::Value = builder.send().await?.json().await?;
+        let resp: serde_json::Value = self.retry_policy.execute(|| async {
+            let builder = self.http.post(self.api_url.as_str())
+                .form(&[
+                    ("action", "parse"),
+                    ("text", wikitext),
+                    ("title", &title.display),
+                    ("contentmodel", "wikitext"),
+                    ("prop", "text"),
+                    ("format", "json"),
+                ]);
+            let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
+            builder.send().await?.json().await.map_err(MwApiError::from)
+        }).await?;
 
         resp["parse"]["text"]["*"]
             .as_str()

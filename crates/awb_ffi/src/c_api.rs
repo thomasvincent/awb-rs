@@ -10,12 +10,14 @@ use std::ffi::CString;
 // Re-export the main FFI functions for C compatibility
 // UniFFI handles the actual implementation, but we provide C wrappers here
 
+/// Returns the library version string. Caller must free with awb_free_string().
 #[unsafe(no_mangle)]
 pub extern "C" fn awb_version() -> *const c_char {
     let version = CString::new(env!("CARGO_PKG_VERSION")).unwrap();
     version.into_raw()
 }
 
+/// Frees a string previously returned by awb_version() or other C API functions.
 #[unsafe(no_mangle)]
 pub extern "C" fn awb_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
