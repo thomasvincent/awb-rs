@@ -3,7 +3,8 @@ use similar::{ChangeTag, TextDiff};
 
 pub fn compute_diff(old: &str, new: &str) -> Vec<DiffOp> {
     let diff = TextDiff::from_lines(old, new);
-    let mut ops = Vec::new();
+    let estimated = (old.lines().count().max(new.lines().count()) / 2) + 10;
+    let mut ops = Vec::with_capacity(estimated);
     let mut old_pos = 0usize;
     let mut new_pos = 0usize;
 
@@ -74,7 +75,8 @@ pub fn to_unified(ops: &[DiffOp], _context_lines: usize) -> String {
 }
 
 pub fn to_side_by_side(ops: &[DiffOp]) -> Vec<SideBySideLine> {
-    let mut lines = Vec::new();
+    let estimated = ops.len() + 10;
+    let mut lines = Vec::with_capacity(estimated);
     let mut left_no = 1;
     let mut right_no = 1;
 

@@ -1,5 +1,6 @@
 use crate::general_fixes::{FixContext, FixModule};
 use regex::Regex;
+use std::borrow::Cow;
 use std::error::Error;
 
 #[derive(Debug, Clone)]
@@ -152,12 +153,16 @@ impl FixModule for TypoFixer {
         "Applies regex-based typo correction rules"
     }
 
-    fn apply(&self, text: &str, _ctx: &FixContext) -> String {
+    fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         let mut result = text.to_string();
         for rule in &self.rules {
             result = rule.apply(&result);
         }
-        result
+        if result == text {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(result)
+        }
     }
 
     fn default_enabled(&self) -> bool {

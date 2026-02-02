@@ -18,6 +18,7 @@ enum CompiledRule {
         find: String,
         replace: String,
         case_sensitive: bool,
+        case_insensitive_regex: Option<regex::Regex>,
         id: uuid::Uuid,
         comment: Option<String>,
     },
@@ -49,13 +50,26 @@ impl TransformEngine {
                     find,
                     replace,
                     case_sensitive,
-                } => Ok(CompiledRule::Plain {
-                    find: find.clone(),
-                    replace: replace.clone(),
-                    case_sensitive: *case_sensitive,
-                    id: rule.id,
-                    comment: rule.comment_fragment.clone(),
-                }),
+                } => {
+                    let case_insensitive_regex = if !case_sensitive {
+                        Some(
+                            regex::RegexBuilder::new(&regex::escape(find))
+                                .case_insensitive(true)
+                                .build()
+                                .expect("known-valid escaped regex"),
+                        )
+                    } else {
+                        None
+                    };
+                    Ok(CompiledRule::Plain {
+                        find: find.clone(),
+                        replace: replace.clone(),
+                        case_sensitive: *case_sensitive,
+                        case_insensitive_regex,
+                        id: rule.id,
+                        comment: rule.comment_fragment.clone(),
+                    })
+                }
                 RuleKind::Regex {
                     pattern,
                     replacement,
@@ -97,18 +111,19 @@ impl TransformEngine {
                     find,
                     replace,
                     case_sensitive,
+                    case_insensitive_regex,
                     id,
                     comment,
                 } => {
                     let new = if *case_sensitive {
                         text.replace(find.as_str(), replace.as_str())
                     } else {
-                        // Case-insensitive plain replace
-                        let re = regex::RegexBuilder::new(&regex::escape(find))
-                            .case_insensitive(true)
-                            .build()
-                            .expect("known-valid escaped regex");
-                        re.replace_all(&text, replace.as_str()).into_owned()
+                        // Use pre-compiled case-insensitive regex
+                        case_insensitive_regex
+                            .as_ref()
+                            .expect("case_insensitive_regex must be Some when case_sensitive is false")
+                            .replace_all(&text, replace.as_str())
+                            .into_owned()
                     };
                     (new, *id, comment)
                 }
