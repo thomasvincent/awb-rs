@@ -231,6 +231,7 @@ dependencies = [
  "dialoguer",
  "indicatif",
  "reqwest 0.12.28",
+ "secrecy",
  "serde",
  "serde_json",
  "tokio",
@@ -245,6 +246,7 @@ name = "awb_domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -302,6 +304,7 @@ dependencies = [
  "percent-encoding",
  "rand 0.8.5",
  "reqwest 0.12.28",
+ "secrecy",
  "serde",
  "serde_json",
  "sha1",

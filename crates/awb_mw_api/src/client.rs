@@ -62,7 +62,7 @@ impl ReqwestMwClient {
         let jar = Arc::new(reqwest::cookie::Jar::default());
         let http = reqwest::ClientBuilder::new()
             .cookie_provider(jar)
-            .user_agent("AWB-RS/0.1.0 (https://github.com/thomasvincent/awb-rs)")
+            .user_agent("AWB-RS/0.1.0 (https://github.com/thomasvincent/awb-rs; awb-rs@users.noreply.github.com)")
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
 
@@ -344,7 +344,13 @@ impl MediaWikiClient for ReqwestMwClient {
                     *self.csrf_token.write().await = None;
                     Err(MwApiError::BadToken)
                 }
-                "maxlag" => Err(MwApiError::MaxLag { retry_after: 5 }),
+                "maxlag" => {
+                    let retry_after = info
+                        .split_whitespace()
+                        .find_map(|w| w.parse::<u64>().ok())
+                        .unwrap_or(5);
+                    Err(MwApiError::MaxLag { retry_after })
+                }
                 _ => Err(MwApiError::ApiError { code, info }),
             };
         }

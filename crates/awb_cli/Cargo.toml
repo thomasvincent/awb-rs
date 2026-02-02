@@ -51,6 +51,9 @@ reqwest.workspace = true
 # Date/time
 chrono.workspace = true
 
+# Security
+secrecy.workspace = true
+
 # Logging
 tracing.workspace = true
 tracing-subscriber.workspace = true

@@ -28,6 +28,67 @@ impl Default for Preferences {
     }
 }
 
+impl Preferences {
+    pub fn validate(&self) -> Result<(), StorageError> {
+        // Validate log_level
+        match self.log_level.as_str() {
+            "trace" | "debug" | "info" | "warn" | "error" => {}
+            other => {
+                return Err(StorageError::Deserialize(format!(
+                    "invalid log_level '{}': expected trace|debug|info|warn|error",
+                    other
+                )));
+            }
+        }
+
+        // Validate diff_mode
+        match self.diff_mode.as_str() {
+            "side-by-side" | "unified" | "inline" => {}
+            other => {
+                return Err(StorageError::Deserialize(format!(
+                    "invalid diff_mode '{}': expected side-by-side|unified|inline",
+                    other
+                )));
+            }
+        }
+
+        // Validate theme
+        match self.theme.as_str() {
+            "system" | "dark" | "light" => {}
+            other => {
+                return Err(StorageError::Deserialize(format!(
+                    "invalid theme '{}': expected system|dark|light",
+                    other
+                )));
+            }
+        }
+
+        // Range-check numeric fields
+        if self.diff_context_lines < 1 || self.diff_context_lines > 50 {
+            return Err(StorageError::Deserialize(format!(
+                "diff_context_lines {} out of range 1..=50",
+                self.diff_context_lines
+            )));
+        }
+
+        if self.auto_save_interval_secs < 5 {
+            return Err(StorageError::Deserialize(format!(
+                "auto_save_interval_secs {} must be >= 5",
+                self.auto_save_interval_secs
+            )));
+        }
+
+        if self.confirm_large_change_threshold < 10 {
+            return Err(StorageError::Deserialize(format!(
+                "confirm_large_change_threshold {} must be >= 10",
+                self.confirm_large_change_threshold
+            )));
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ConfigFile {
     preferences: Preferences,
@@ -61,23 +122,39 @@ impl TomlConfigStore {
             std::fs::create_dir_all(parent)?;
         }
         let data = toml::to_string_pretty(config)?;
-        std::fs::write(&self.path, data)?;
+        let tmp_path = self.path.with_extension("tmp");
 
-        // Set restrictive permissions on Unix (0600 = owner read/write only)
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600))?;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&tmp_path)?;
+            file.write_all(data.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&tmp_path, &data)?;
         }
 
+        std::fs::rename(&tmp_path, &self.path)?;
         Ok(())
     }
 
     pub fn load_preferences(&self) -> Result<Preferences, StorageError> {
-        Ok(self.load_file()?.preferences)
+        let prefs = self.load_file()?.preferences;
+        prefs.validate()?;
+        Ok(prefs)
     }
 
     pub fn save_preferences(&self, prefs: &Preferences) -> Result<(), StorageError> {
+        prefs.validate()?;
         let mut config = self.load_file()?;
         config.preferences = prefs.clone();
         self.save_file(&config)
@@ -332,5 +409,74 @@ mod tests {
 
         // Should be 0600 (owner read/write only)
         assert_eq!(mode & 0o777, 0o600, "File permissions should be 0600");
+    }
+
+    #[test]
+    fn test_validate_default_preferences() {
+        let prefs = Preferences::default();
+        assert!(prefs.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_log_level() {
+        let mut prefs = Preferences::default();
+        prefs.log_level = "verbose".to_string();
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_diff_mode() {
+        let mut prefs = Preferences::default();
+        prefs.diff_mode = "fancy".to_string();
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_context_lines() {
+        let mut prefs = Preferences::default();
+        prefs.diff_context_lines = 0;
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_excessive_context_lines() {
+        let mut prefs = Preferences::default();
+        prefs.diff_context_lines = 51;
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_low_auto_save_interval() {
+        let mut prefs = Preferences::default();
+        prefs.auto_save_interval_secs = 2;
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_low_change_threshold() {
+        let mut prefs = Preferences::default();
+        prefs.confirm_large_change_threshold = 5;
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_theme() {
+        let mut prefs = Preferences::default();
+        prefs.theme = "rainbow".to_string();
+        assert!(prefs.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_accepts_valid_themes() {
+        let mut prefs = Preferences::default();
+
+        prefs.theme = "system".to_string();
+        assert!(prefs.validate().is_ok());
+
+        prefs.theme = "dark".to_string();
+        assert!(prefs.validate().is_ok());
+
+        prefs.theme = "light".to_string();
+        assert!(prefs.validate().is_ok());
     }
 }

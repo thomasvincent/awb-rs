@@ -5,6 +5,7 @@ use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, RefreshToken,
     Scope, TokenResponse as OAuth2TokenResponse, TokenUrl, basic::BasicClient,
 };
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::collections::BTreeMap;
@@ -13,30 +14,70 @@ use std::time::{SystemTime, UNIX_EPOCH};
 type HmacSha1 = Hmac<Sha1>;
 
 /// OAuth 1.0a configuration (used by MediaWiki)
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct OAuth1Config {
     pub consumer_key: String,
-    pub consumer_secret: String,
+    pub consumer_secret: SecretString,
     pub access_token: String,
-    pub access_secret: String,
+    pub access_secret: SecretString,
 }
 
 impl std::fmt::Debug for OAuth1Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OAuth1Config")
             .field("consumer_key", &self.consumer_key)
-            .field("consumer_secret", &"***REDACTED***")
+            .field("consumer_secret", &"[REDACTED]")
             .field("access_token", &self.access_token)
-            .field("access_secret", &"***REDACTED***")
+            .field("access_secret", &"[REDACTED]")
             .finish()
     }
 }
 
+impl Serialize for OAuth1Config {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct OAuth1ConfigHelper<'a> {
+            consumer_key: &'a str,
+            consumer_secret: &'a str,
+            access_token: &'a str,
+            access_secret: &'a str,
+        }
+
+        let helper = OAuth1ConfigHelper {
+            consumer_key: &self.consumer_key,
+            consumer_secret: self.consumer_secret.expose_secret(),
+            access_token: &self.access_token,
+            access_secret: self.access_secret.expose_secret(),
+        };
+        helper.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OAuth1Config {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct OAuth1ConfigHelper {
+            consumer_key: String,
+            consumer_secret: String,
+            access_token: String,
+            access_secret: String,
+        }
+
+        let helper = OAuth1ConfigHelper::deserialize(deserializer)?;
+        Ok(OAuth1Config {
+            consumer_key: helper.consumer_key,
+            consumer_secret: SecretString::new(helper.consumer_secret.into()),
+            access_token: helper.access_token,
+            access_secret: SecretString::new(helper.access_secret.into()),
+        })
+    }
+}
+
 /// OAuth 2.0 configuration
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct OAuth2Config {
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: SecretString,
     pub redirect_uri: String,
     pub token_endpoint: String,
     pub auth_endpoint: String,
@@ -46,7 +87,7 @@ impl std::fmt::Debug for OAuth2Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OAuth2Config")
             .field("client_id", &self.client_id)
-            .field("client_secret", &"***REDACTED***")
+            .field("client_secret", &"[REDACTED]")
             .field("redirect_uri", &self.redirect_uri)
             .field("token_endpoint", &self.token_endpoint)
             .field("auth_endpoint", &self.auth_endpoint)
@@ -54,27 +95,110 @@ impl std::fmt::Debug for OAuth2Config {
     }
 }
 
+impl Serialize for OAuth2Config {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct OAuth2ConfigHelper<'a> {
+            client_id: &'a str,
+            client_secret: &'a str,
+            redirect_uri: &'a str,
+            token_endpoint: &'a str,
+            auth_endpoint: &'a str,
+        }
+
+        let helper = OAuth2ConfigHelper {
+            client_id: &self.client_id,
+            client_secret: self.client_secret.expose_secret(),
+            redirect_uri: &self.redirect_uri,
+            token_endpoint: &self.token_endpoint,
+            auth_endpoint: &self.auth_endpoint,
+        };
+        helper.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OAuth2Config {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct OAuth2ConfigHelper {
+            client_id: String,
+            client_secret: String,
+            redirect_uri: String,
+            token_endpoint: String,
+            auth_endpoint: String,
+        }
+
+        let helper = OAuth2ConfigHelper::deserialize(deserializer)?;
+        Ok(OAuth2Config {
+            client_id: helper.client_id,
+            client_secret: SecretString::new(helper.client_secret.into()),
+            redirect_uri: helper.redirect_uri,
+            token_endpoint: helper.token_endpoint,
+            auth_endpoint: helper.auth_endpoint,
+        })
+    }
+}
+
 /// Token response for OAuth 2.0
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct TokenResponse {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
+    pub access_token: SecretString,
+    pub refresh_token: Option<SecretString>,
     pub expires_in: Option<u64>,
-    #[serde(skip, default = "SystemTime::now")]
     pub issued_at: SystemTime,
 }
 
 impl std::fmt::Debug for TokenResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenResponse")
-            .field("access_token", &"***REDACTED***")
+            .field("access_token", &"[REDACTED]")
             .field(
                 "refresh_token",
-                &self.refresh_token.as_ref().map(|_| "***REDACTED***"),
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
             )
             .field("expires_in", &self.expires_in)
             .field("issued_at", &self.issued_at)
             .finish()
+    }
+}
+
+impl Serialize for TokenResponse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct TokenResponseHelper<'a> {
+            access_token: &'a str,
+            refresh_token: Option<&'a str>,
+            expires_in: Option<u64>,
+            #[serde(skip)]
+            issued_at: SystemTime,
+        }
+
+        let helper = TokenResponseHelper {
+            access_token: self.access_token.expose_secret(),
+            refresh_token: self.refresh_token.as_ref().map(|s| s.expose_secret().as_ref()),
+            expires_in: self.expires_in,
+            issued_at: self.issued_at,
+        };
+        helper.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TokenResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct TokenResponseHelper {
+            access_token: String,
+            refresh_token: Option<String>,
+            expires_in: Option<u64>,
+        }
+
+        let helper = TokenResponseHelper::deserialize(deserializer)?;
+        Ok(TokenResponse {
+            access_token: SecretString::new(helper.access_token.into()),
+            refresh_token: helper.refresh_token.map(|s| SecretString::new(s.into())),
+            expires_in: helper.expires_in,
+            issued_at: SystemTime::now(),
+        })
     }
 }
 
@@ -142,8 +266,8 @@ pub fn oauth1_sign_request(
     // Build signing key
     let signing_key = format!(
         "{}&{}",
-        percent_encode(&config.consumer_secret),
-        percent_encode(&config.access_secret)
+        percent_encode(config.consumer_secret.expose_secret()),
+        percent_encode(config.access_secret.expose_secret())
     );
 
     // Generate signature
@@ -265,8 +389,8 @@ pub async fn oauth2_exchange_code(
         })?;
 
     Ok(TokenResponse {
-        access_token: token_result.access_token().secret().clone(),
-        refresh_token: token_result.refresh_token().map(|t| t.secret().clone()),
+        access_token: SecretString::new(token_result.access_token().secret().clone().into()),
+        refresh_token: token_result.refresh_token().map(|t| SecretString::new(t.secret().clone().into())),
         expires_in: token_result.expires_in().map(|d| d.as_secs()),
         issued_at: SystemTime::now(),
     })
@@ -288,8 +412,8 @@ pub async fn oauth2_refresh_token(
         })?;
 
     Ok(TokenResponse {
-        access_token: token_result.access_token().secret().clone(),
-        refresh_token: token_result.refresh_token().map(|t| t.secret().clone()),
+        access_token: SecretString::new(token_result.access_token().secret().clone().into()),
+        refresh_token: token_result.refresh_token().map(|t| SecretString::new(t.secret().clone().into())),
         expires_in: token_result.expires_in().map(|d| d.as_secs()),
         issued_at: SystemTime::now(),
     })
@@ -309,7 +433,7 @@ fn build_oauth2_client(config: &OAuth2Config) -> Result<BasicClient, MwApiError>
 
     Ok(BasicClient::new(
         ClientId::new(config.client_id.clone()),
-        Some(ClientSecret::new(config.client_secret.clone())),
+        Some(ClientSecret::new(config.client_secret.expose_secret().to_string())),
         auth_url,
         Some(token_url),
     )
@@ -336,14 +460,14 @@ impl OAuthSession {
     pub async fn get_access_token(&mut self) -> Result<String, MwApiError> {
         if self.token.is_expired() {
             if let Some(ref refresh_token) = self.token.refresh_token {
-                self.token = oauth2_refresh_token(&self.config, refresh_token).await?;
+                self.token = oauth2_refresh_token(&self.config, refresh_token.expose_secret()).await?;
             } else {
                 return Err(MwApiError::AuthError {
                     reason: "Token expired and no refresh token available".into(),
                 });
             }
         }
-        Ok(self.token.access_token.clone())
+        Ok(self.token.access_token.expose_secret().to_string())
     }
 
     /// Check if session has a valid token
@@ -360,9 +484,9 @@ mod tests {
     fn test_oauth1_signature_generation() {
         let config = OAuth1Config {
             consumer_key: "test_consumer".to_string(),
-            consumer_secret: "test_secret".to_string(),
+            consumer_secret: SecretString::new("test_secret".to_string().into()),
             access_token: "test_token".to_string(),
-            access_secret: "token_secret".to_string(),
+            access_secret: SecretString::new("token_secret".to_string().into()),
         };
 
         let params = vec![
@@ -394,7 +518,7 @@ mod tests {
     #[test]
     fn test_token_expiry() {
         let mut token = TokenResponse {
-            access_token: "test".to_string(),
+            access_token: SecretString::new("test".to_string().into()),
             refresh_token: None,
             expires_in: Some(3600),
             issued_at: SystemTime::now(),

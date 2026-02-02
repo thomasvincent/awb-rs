@@ -249,7 +249,10 @@ mod tests {
         let text = "Article text.\n[[Category:Existing]]";
         let result = mgr.add_category(text, "New");
         assert!(result.contains("[[Category:New]]"));
-        assert!(result.find("[[Category:New]]").unwrap() < result.find("[[Category:Existing]]").unwrap());
+        assert!(
+            result.find("[[Category:New]]").unwrap()
+                < result.find("[[Category:Existing]]").unwrap()
+        );
     }
 
     #[test]

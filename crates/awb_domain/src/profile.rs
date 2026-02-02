@@ -1,4 +1,5 @@
 use crate::types::Namespace;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -13,20 +14,20 @@ pub struct Profile {
     pub throttle_policy: ThrottlePolicy,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub enum AuthMethod {
     BotPassword {
         username: String,
     },
     OAuth1 {
         consumer_key: String,
-        consumer_secret: String,
+        consumer_secret: SecretString,
         access_token: String,
-        access_secret: String,
+        access_secret: SecretString,
     },
     OAuth2 {
         client_id: String,
-        client_secret: String,
+        client_secret: SecretString,
     },
 }
 
@@ -58,6 +59,69 @@ impl std::fmt::Debug for AuthMethod {
                 .field("client_secret", &"***REDACTED***")
                 .finish(),
         }
+    }
+}
+
+impl Serialize for AuthMethod {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // We use a helper struct to serialize
+        #[derive(Serialize)]
+        #[serde(tag = "type")]
+        enum AuthMethodHelper<'a> {
+            BotPassword { username: &'a str },
+            OAuth1 { consumer_key: &'a str, consumer_secret: &'a str, access_token: &'a str, access_secret: &'a str },
+            OAuth2 { client_id: &'a str, client_secret: &'a str },
+        }
+
+        let helper = match self {
+            AuthMethod::BotPassword { username } => AuthMethodHelper::BotPassword { username },
+            AuthMethod::OAuth1 { consumer_key, consumer_secret, access_token, access_secret } => {
+                AuthMethodHelper::OAuth1 {
+                    consumer_key,
+                    consumer_secret: consumer_secret.expose_secret(),
+                    access_token,
+                    access_secret: access_secret.expose_secret(),
+                }
+            }
+            AuthMethod::OAuth2 { client_id, client_secret } => {
+                AuthMethodHelper::OAuth2 {
+                    client_id,
+                    client_secret: client_secret.expose_secret(),
+                }
+            }
+        };
+        helper.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AuthMethod {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum AuthMethodHelper {
+            BotPassword { username: String },
+            OAuth1 { consumer_key: String, consumer_secret: String, access_token: String, access_secret: String },
+            OAuth2 { client_id: String, client_secret: String },
+        }
+
+        let helper = AuthMethodHelper::deserialize(deserializer)?;
+        Ok(match helper {
+            AuthMethodHelper::BotPassword { username } => AuthMethod::BotPassword { username },
+            AuthMethodHelper::OAuth1 { consumer_key, consumer_secret, access_token, access_secret } => {
+                AuthMethod::OAuth1 {
+                    consumer_key,
+                    consumer_secret: SecretString::new(consumer_secret.into()),
+                    access_token,
+                    access_secret: SecretString::new(access_secret.into()),
+                }
+            }
+            AuthMethodHelper::OAuth2 { client_id, client_secret } => {
+                AuthMethod::OAuth2 {
+                    client_id,
+                    client_secret: SecretString::new(client_secret.into()),
+                }
+            }
+        })
     }
 }
 
@@ -143,7 +207,7 @@ mod tests {
     fn test_auth_method_oauth2() {
         let auth = AuthMethod::OAuth2 {
             client_id: "client123".to_string(),
-            client_secret: "secret456".to_string(),
+            client_secret: SecretString::new("secret456".into()),
         };
 
         match auth {
@@ -152,10 +216,51 @@ mod tests {
                 client_secret,
             } => {
                 assert_eq!(client_id, "client123");
-                assert_eq!(client_secret, "secret456");
+                assert_eq!(client_secret.expose_secret(), "secret456");
             }
             _ => panic!("Expected OAuth2 auth method"),
         }
+    }
+
+    #[test]
+    fn test_auth_method_oauth1_serialization() {
+        let auth = AuthMethod::OAuth1 {
+            consumer_key: "consumer123".to_string(),
+            consumer_secret: SecretString::new("consumer_secret456".into()),
+            access_token: "token789".to_string(),
+            access_secret: SecretString::new("token_secret012".into()),
+        };
+
+        // Test serialization
+        let json = serde_json::to_string(&auth).unwrap();
+        assert!(json.contains("consumer123"));
+        assert!(json.contains("consumer_secret456"));
+        assert!(json.contains("token789"));
+        assert!(json.contains("token_secret012"));
+
+        // Test deserialization
+        let deserialized: AuthMethod = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            AuthMethod::OAuth1 {
+                consumer_key,
+                consumer_secret,
+                access_token,
+                access_secret,
+            } => {
+                assert_eq!(consumer_key, "consumer123");
+                assert_eq!(consumer_secret.expose_secret(), "consumer_secret456");
+                assert_eq!(access_token, "token789");
+                assert_eq!(access_secret.expose_secret(), "token_secret012");
+            }
+            _ => panic!("Expected OAuth1 auth method"),
+        }
+
+        // Test Debug redaction
+        let debug_output = format!("{:?}", auth);
+        assert!(debug_output.contains("consumer123"));
+        assert!(debug_output.contains("***REDACTED***"));
+        assert!(!debug_output.contains("consumer_secret456"));
+        assert!(!debug_output.contains("token_secret012"));
     }
 
     #[test]
