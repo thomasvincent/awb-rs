@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use awb_domain::profile::AuthMethod;
 use awb_domain::types::Title;
 use awb_engine::diff_engine::{compute_diff, to_unified};
-use awb_mw_api::client::{MediaWikiClient, ReqwestMwClient, EditRequest};
+use awb_mw_api::client::{EditRequest, MediaWikiClient, ReqwestMwClient};
 use awb_security::{CredentialPort, InMemoryCredentialStore};
 use awb_storage::TomlConfigStore;
 use chrono::Utc;
@@ -22,23 +22,28 @@ pub async fn run(
     println!("{}", style("AWB-RS Edit Workflow").bold().cyan());
     println!("Wiki: {}", wiki);
     println!("Profile: {}", profile_path.display());
-    println!("Mode: {}", if dry_run {
-        style("DRY-RUN").yellow()
-    } else if batch {
-        style("BATCH").green()
-    } else {
-        style("INTERACTIVE").cyan()
-    });
+    println!(
+        "Mode: {}",
+        if dry_run {
+            style("DRY-RUN").yellow()
+        } else if batch {
+            style("BATCH").green()
+        } else {
+            style("INTERACTIVE").cyan()
+        }
+    );
     println!();
 
     // Load profile
     let config_store = TomlConfigStore::new(&profile_path);
-    let profile = config_store.load_profile(&auth_profile)
+    let profile = config_store
+        .load_profile(&auth_profile)
         .context("Failed to load profile. Create one first or use a different auth-profile.")?;
 
     // Get credentials
     let cred_store = InMemoryCredentialStore::new();
-    let password = cred_store.get_password(&auth_profile)
+    let password = cred_store
+        .get_password(&auth_profile)
         .context("No stored credentials found. Run 'login' command first.")?;
 
     // Create client and login
@@ -56,14 +61,18 @@ pub async fn run(
         }
     };
 
-    client.login_bot_password(&username, &password)
+    client
+        .login_bot_password(&username, &password)
         .await
         .context("Login failed")?;
     println!("{}", style("✓").green().bold());
 
     // Fetch CSRF token
     print!("Fetching CSRF token... ");
-    client.fetch_csrf_token().await.context("Failed to fetch CSRF token")?;
+    client
+        .fetch_csrf_token()
+        .await
+        .context("Failed to fetch CSRF token")?;
     println!("{}", style("✓").green().bold());
 
     // For demo purposes, generate a simple page list
@@ -82,7 +91,7 @@ pub async fn run(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
             .expect("valid progress template")
-            .progress_chars("#>-")
+            .progress_chars("#>-"),
     );
 
     let mut saved_count = 0;
@@ -95,7 +104,8 @@ pub async fn run(
         let page = match client.get_page(&title).await {
             Ok(p) => p,
             Err(e) => {
-                pb.println(format!("  {} Failed to fetch {}: {}",
+                pb.println(format!(
+                    "  {} Failed to fetch {}: {}",
                     style("✗").red(),
                     title.display,
                     e
@@ -110,7 +120,8 @@ pub async fn run(
         let new_text = apply_simple_transform(&page.wikitext);
 
         if new_text == page.wikitext {
-            pb.println(format!("  {} No changes needed: {}",
+            pb.println(format!(
+                "  {} No changes needed: {}",
                 style("→").dim(),
                 title.display
             ));
@@ -124,7 +135,10 @@ pub async fn run(
         let unified_diff = to_unified(&diff_ops, 3);
 
         // Show diff
-        pb.println(format!("\n{}", style(format!("Diff for: {}", title.display)).bold()));
+        pb.println(format!(
+            "\n{}",
+            style(format!("Diff for: {}", title.display)).bold()
+        ));
         pb.println(style("─".repeat(60)).dim().to_string());
         for line in unified_diff.lines().take(20) {
             if line.starts_with('+') {
@@ -139,10 +153,16 @@ pub async fn run(
 
         // Decide action
         let should_save = if dry_run {
-            pb.println(format!("  {} Dry-run mode - not saving\n", style("ℹ").cyan()));
+            pb.println(format!(
+                "  {} Dry-run mode - not saving\n",
+                style("ℹ").cyan()
+            ));
             false
         } else if batch {
-            pb.println(format!("  {} Batch mode - auto-saving\n", style("✓").green()));
+            pb.println(format!(
+                "  {} Batch mode - auto-saving\n",
+                style("✓").green()
+            ));
             true
         } else {
             // Interactive mode
@@ -157,7 +177,8 @@ pub async fn run(
             match selection {
                 0 => true,  // Save
                 1 => false, // Skip
-                2 => {      // Stop
+                2 => {
+                    // Stop
                     pb.println(format!("\n{}", style("Stopped by user").yellow()));
                     break;
                 }
@@ -179,7 +200,8 @@ pub async fn run(
 
             match client.edit_page(&edit_request).await {
                 Ok(response) => {
-                    pb.println(format!("  {} Saved: {} (rev {})",
+                    pb.println(format!(
+                        "  {} Saved: {} (rev {})",
                         style("✓").green().bold(),
                         title.display,
                         response.new_revid.unwrap_or(0)
@@ -187,7 +209,8 @@ pub async fn run(
                     saved_count += 1;
                 }
                 Err(e) => {
-                    pb.println(format!("  {} Failed to save {}: {}",
+                    pb.println(format!(
+                        "  {} Failed to save {}: {}",
                         style("✗").red(),
                         title.display,
                         e
@@ -196,7 +219,11 @@ pub async fn run(
                 }
             }
         } else {
-            pb.println(format!("  {} Skipped: {}\n", style("→").yellow(), title.display));
+            pb.println(format!(
+                "  {} Skipped: {}\n",
+                style("→").yellow(),
+                title.display
+            ));
             skipped_count += 1;
         }
 

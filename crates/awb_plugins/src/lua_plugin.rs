@@ -75,9 +75,23 @@ impl LuaPlugin {
 
         // Remove dangerous modules and functions
         for module in &[
-            "os", "io", "debug", "package", "dofile", "loadfile", "require",
-            "load", "loadstring", "collectgarbage", "rawget", "rawset",
-            "rawequal", "rawlen", "getmetatable", "setmetatable", "coroutine"
+            "os",
+            "io",
+            "debug",
+            "package",
+            "dofile",
+            "loadfile",
+            "require",
+            "load",
+            "loadstring",
+            "collectgarbage",
+            "rawget",
+            "rawset",
+            "rawequal",
+            "rawlen",
+            "getmetatable",
+            "setmetatable",
+            "coroutine",
         ] {
             globals.set(*module, Value::Nil)?;
         }
@@ -146,9 +160,14 @@ impl LuaPlugin {
     }
 
     /// Execute the transform function with instruction count limit
-    fn execute_transform(&self, input: &str, cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<String> {
+    fn execute_transform(
+        &self,
+        input: &str,
+        cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<String> {
         // Reset counter before each execution
-        self.instruction_counter.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.instruction_counter
+            .store(0, std::sync::atomic::Ordering::Relaxed);
 
         // Set instruction hook if limit is configured or for cancellation
         let counter = self.instruction_counter.clone();
@@ -181,9 +200,9 @@ impl LuaPlugin {
 
         // Get the transform function
         let globals = self.lua.globals();
-        let transform: mlua::Function = globals
-            .get("transform")
-            .map_err(|e| PluginError::LoadFailed(format!("transform() function not found: {}", e)))?;
+        let transform: mlua::Function = globals.get("transform").map_err(|e| {
+            PluginError::LoadFailed(format!("transform() function not found: {}", e))
+        })?;
 
         // Call the transform function
         let result: String = transform
@@ -276,7 +295,8 @@ mod tests {
             end
         "#;
 
-        let plugin = LuaPlugin::from_string("redirect_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("redirect_test", script, SandboxConfig::default()).unwrap();
 
         let redirect_text = "#REDIRECT [[Main Page]]";
         let result = plugin.transform(redirect_text).unwrap();

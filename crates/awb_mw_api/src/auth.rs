@@ -39,15 +39,25 @@ struct Tokens {
 }
 
 pub async fn fetch_login_token(client: &Client, api_url: &url::Url) -> Result<String, MwApiError> {
-    let resp: serde_json::Value = client.get(api_url.as_str())
-        .query(&[("action", "query"), ("meta", "tokens"), ("type", "login"), ("format", "json")])
-        .send().await?
-        .json().await?;
+    let resp: serde_json::Value = client
+        .get(api_url.as_str())
+        .query(&[
+            ("action", "query"),
+            ("meta", "tokens"),
+            ("type", "login"),
+            ("format", "json"),
+        ])
+        .send()
+        .await?
+        .json()
+        .await?;
 
     resp["query"]["tokens"]["logintoken"]
         .as_str()
         .map(String::from)
-        .ok_or_else(|| MwApiError::AuthError { reason: "No login token returned".into() })
+        .ok_or_else(|| MwApiError::AuthError {
+            reason: "No login token returned".into(),
+        })
 }
 
 pub async fn login_bot_password(
@@ -58,7 +68,8 @@ pub async fn login_bot_password(
 ) -> Result<(), MwApiError> {
     let token = fetch_login_token(client, api_url).await?;
 
-    let resp: serde_json::Value = client.post(api_url.as_str())
+    let resp: serde_json::Value = client
+        .post(api_url.as_str())
         .form(&[
             ("action", "login"),
             ("lgname", username),
@@ -66,27 +77,42 @@ pub async fn login_bot_password(
             ("lgtoken", &token),
             ("format", "json"),
         ])
-        .send().await?
-        .json().await?;
+        .send()
+        .await?
+        .json()
+        .await?;
 
     let result = resp["login"]["result"].as_str().unwrap_or("");
     if result == "Success" {
         info!(username, "Login successful");
         Ok(())
     } else {
-        let reason = resp["login"]["reason"].as_str().unwrap_or("Unknown").to_string();
+        let reason = resp["login"]["reason"]
+            .as_str()
+            .unwrap_or("Unknown")
+            .to_string();
         Err(MwApiError::AuthError { reason })
     }
 }
 
 pub async fn fetch_csrf_token(client: &Client, api_url: &url::Url) -> Result<String, MwApiError> {
-    let resp: serde_json::Value = client.get(api_url.as_str())
-        .query(&[("action", "query"), ("meta", "tokens"), ("type", "csrf"), ("format", "json")])
-        .send().await?
-        .json().await?;
+    let resp: serde_json::Value = client
+        .get(api_url.as_str())
+        .query(&[
+            ("action", "query"),
+            ("meta", "tokens"),
+            ("type", "csrf"),
+            ("format", "json"),
+        ])
+        .send()
+        .await?
+        .json()
+        .await?;
 
     resp["query"]["tokens"]["csrftoken"]
         .as_str()
         .map(String::from)
-        .ok_or_else(|| MwApiError::AuthError { reason: "No CSRF token returned".into() })
+        .ok_or_else(|| MwApiError::AuthError {
+            reason: "No CSRF token returned".into(),
+        })
 }

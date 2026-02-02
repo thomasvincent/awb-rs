@@ -28,10 +28,10 @@ impl Default for TelemetryConfig {
 }
 
 pub fn init_telemetry(config: &TelemetryConfig) -> Result<(), TelemetryError> {
-    use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(config.level.as_str()));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(config.level.as_str()));
 
     tracing_subscriber::registry()
         .with(filter)

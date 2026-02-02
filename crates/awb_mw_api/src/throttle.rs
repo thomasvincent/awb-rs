@@ -9,7 +9,10 @@ pub struct ThrottleController {
 
 impl ThrottleController {
     pub fn new(policy: ThrottlePolicy) -> Self {
-        Self { policy, last_edit: Mutex::new(None) }
+        Self {
+            policy,
+            last_edit: Mutex::new(None),
+        }
     }
 
     pub async fn acquire_edit_permit(&self) {
@@ -23,7 +26,9 @@ impl ThrottleController {
         *last = Some(Instant::now());
     }
 
-    pub fn maxlag(&self) -> u32 { self.policy.maxlag }
+    pub fn maxlag(&self) -> u32 {
+        self.policy.maxlag
+    }
 }
 
 #[cfg(test)]
@@ -70,7 +75,10 @@ mod tests {
         let elapsed = start.elapsed();
 
         // First call should not wait
-        assert!(elapsed < Duration::from_millis(50), "First call should be immediate");
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "First call should be immediate"
+        );
     }
 
     #[tokio::test]
@@ -94,8 +102,14 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Should wait approximately min_interval (allow for timing variations)
-        assert!(elapsed >= Duration::from_millis(90), "Should wait at least 90ms");
-        assert!(elapsed < Duration::from_millis(200), "Should not wait more than 200ms");
+        assert!(
+            elapsed >= Duration::from_millis(90),
+            "Should wait at least 90ms"
+        );
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "Should not wait more than 200ms"
+        );
     }
 
     #[tokio::test]
@@ -120,7 +134,10 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Total time should be at least 2 * min_interval (3 calls = 2 waits)
-        assert!(elapsed >= Duration::from_millis(100), "Should wait at least 100ms for 3 calls");
+        assert!(
+            elapsed >= Duration::from_millis(100),
+            "Should wait at least 100ms for 3 calls"
+        );
     }
 
     #[tokio::test]
@@ -146,7 +163,10 @@ mod tests {
         controller.acquire_edit_permit().await;
         let elapsed = start.elapsed();
 
-        assert!(elapsed < Duration::from_millis(20), "Should not wait if interval already passed");
+        assert!(
+            elapsed < Duration::from_millis(20),
+            "Should not wait if interval already passed"
+        );
     }
 
     #[test]

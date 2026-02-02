@@ -17,3 +17,14 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+
+# GTK4 dependencies
+gtk = { package = "gtk4", version = "0.9", features = ["v4_10"] }
+libadwaita = { version = "0.7", features = ["v1_5"] }
+glib = "0.20"
+gio = "0.20"
+sourceview = { package = "sourceview5", version = "0.9" }
+
+[[bin]]
+name = "awb-gtk"
+path = "src/main.rs"

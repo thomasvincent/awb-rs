@@ -1,4 +1,4 @@
-use crate::general_fixes::{FixModule, FixContext};
+use crate::general_fixes::{FixContext, FixModule};
 use regex::Regex;
 use std::error::Error;
 
@@ -17,7 +17,9 @@ impl TypoRule {
     }
 
     pub fn apply(&self, text: &str) -> String {
-        self.find.replace_all(text, self.replace.as_str()).into_owned()
+        self.find
+            .replace_all(text, self.replace.as_str())
+            .into_owned()
     }
 }
 
@@ -83,9 +85,8 @@ impl TypoFixer {
         let mut fixer = Self::new();
 
         // Simple regex-based XML parsing for <Typo> elements
-        let typo_re = Regex::new(
-            r#"<Typo\s+(?:word="[^"]*"\s+)?find="([^"]*)"\s+replace="([^"]*)"\s*/>"#
-        )?;
+        let typo_re =
+            Regex::new(r#"<Typo\s+(?:word="[^"]*"\s+)?find="([^"]*)"\s+replace="([^"]*)"\s*/>"#)?;
 
         for (line_num, caps) in typo_re.captures_iter(xml_content).enumerate() {
             let pattern = &caps[1];
@@ -113,7 +114,7 @@ impl TypoFixer {
     }
 
     /// Auto-detect format and parse
-    pub fn from_str(content: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn parse_str(content: &str) -> Result<Self, Box<dyn Error>> {
         let trimmed = content.trim();
 
         if trimmed.contains("<Typo") {
@@ -178,7 +179,7 @@ fn unescape_xml(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::general_fixes::FixContext;
-    use awb_domain::types::{Title, Namespace};
+    use awb_domain::types::{Namespace, Title};
 
     fn test_context() -> FixContext {
         FixContext {
@@ -276,14 +277,14 @@ mod tests {
     #[test]
     fn test_auto_detect_tsv() {
         let content = "\\bcolour\\b\tcolor";
-        let fixer = TypoFixer::from_str(content).unwrap();
+        let fixer = TypoFixer::parse_str(content).unwrap();
         assert_eq!(fixer.rule_count(), 1);
     }
 
     #[test]
     fn test_auto_detect_xml() {
         let content = r#"<Typo find="\bcolour\b" replace="color" />"#;
-        let fixer = TypoFixer::from_str(content).unwrap();
+        let fixer = TypoFixer::parse_str(content).unwrap();
         assert_eq!(fixer.rule_count(), 1);
     }
 

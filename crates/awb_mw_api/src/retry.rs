@@ -1,6 +1,6 @@
 use crate::error::MwApiError;
-use std::time::Duration;
 use std::future::Future;
+use std::time::Duration;
 use tokio::time::sleep;
 use tracing::warn;
 
@@ -12,7 +12,11 @@ pub struct RetryPolicy {
 
 impl Default for RetryPolicy {
     fn default() -> Self {
-        Self { max_retries: 3, base_delay: Duration::from_secs(2), max_delay: Duration::from_secs(60) }
+        Self {
+            max_retries: 3,
+            base_delay: Duration::from_secs(2),
+            max_delay: Duration::from_secs(60),
+        }
     }
 }
 
@@ -29,7 +33,9 @@ impl RetryPolicy {
                 Err(e) if e.is_retryable() && attempt < self.max_retries => {
                     let delay_secs = self.base_delay.as_secs_f64() * 2f64.powi(attempt as i32);
                     let jitter = rand_jitter();
-                    let delay = Duration::from_secs_f64(delay_secs.min(self.max_delay.as_secs_f64()) + jitter);
+                    let delay = Duration::from_secs_f64(
+                        delay_secs.min(self.max_delay.as_secs_f64()) + jitter,
+                    );
                     warn!(attempt, ?delay, error = %e, "Retrying after error");
                     sleep(delay).await;
                     attempt += 1;
@@ -90,17 +96,23 @@ mod tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = policy.execute(move || {
-            let count = call_count_clone.clone();
-            async move {
-                count.fetch_add(1, Ordering::SeqCst);
-                Ok::<i32, MwApiError>(42)
-            }
-        }).await;
+        let result = policy
+            .execute(move || {
+                let count = call_count_clone.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    Ok::<i32, MwApiError>(42)
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), 1, "Should succeed on first try");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "Should succeed on first try"
+        );
     }
 
     #[tokio::test]
@@ -117,21 +129,27 @@ mod tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = policy.execute(move || {
-            let count = call_count_clone.clone();
-            async move {
-                let current = count.fetch_add(1, Ordering::SeqCst) + 1;
-                if current < 3 {
-                    Err(MwApiError::MaxLag { retry_after: 5 })
-                } else {
-                    Ok::<i32, MwApiError>(42)
+        let result = policy
+            .execute(move || {
+                let count = call_count_clone.clone();
+                async move {
+                    let current = count.fetch_add(1, Ordering::SeqCst) + 1;
+                    if current < 3 {
+                        Err(MwApiError::MaxLag { retry_after: 5 })
+                    } else {
+                        Ok::<i32, MwApiError>(42)
+                    }
                 }
-            }
-        }).await;
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), 3, "Should retry twice then succeed");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "Should retry twice then succeed"
+        );
     }
 
     #[tokio::test]
@@ -148,16 +166,22 @@ mod tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = policy.execute(move || {
-            let count = call_count_clone.clone();
-            async move {
-                count.fetch_add(1, Ordering::SeqCst);
-                Err::<i32, MwApiError>(MwApiError::MaxLag { retry_after: 5 })
-            }
-        }).await;
+        let result = policy
+            .execute(move || {
+                let count = call_count_clone.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    Err::<i32, MwApiError>(MwApiError::MaxLag { retry_after: 5 })
+                }
+            })
+            .await;
 
         assert!(result.is_err());
-        assert_eq!(call_count.load(Ordering::SeqCst), 3, "Should try once + 2 retries = 3 total attempts");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "Should try once + 2 retries = 3 total attempts"
+        );
 
         match result {
             Err(MwApiError::MaxLag { retry_after }) => assert_eq!(retry_after, 5),
@@ -179,19 +203,25 @@ mod tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = policy.execute(move || {
-            let count = call_count_clone.clone();
-            async move {
-                count.fetch_add(1, Ordering::SeqCst);
-                Err::<i32, MwApiError>(MwApiError::ApiError {
-                    code: "permissiondenied".to_string(),
-                    info: "Access denied".to_string(),
-                })
-            }
-        }).await;
+        let result = policy
+            .execute(move || {
+                let count = call_count_clone.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    Err::<i32, MwApiError>(MwApiError::ApiError {
+                        code: "permissiondenied".to_string(),
+                        info: "Access denied".to_string(),
+                    })
+                }
+            })
+            .await;
 
         assert!(result.is_err());
-        assert_eq!(call_count.load(Ordering::SeqCst), 1, "Should not retry non-retryable errors");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "Should not retry non-retryable errors"
+        );
     }
 
     #[test]
@@ -215,7 +245,10 @@ mod tests {
     fn test_rand_jitter_returns_valid_range() {
         for _ in 0..100 {
             let jitter = rand_jitter();
-            assert!(jitter >= 0.0 && jitter < 1.0, "Jitter should be in [0, 1) range");
+            assert!(
+                jitter >= 0.0 && jitter < 1.0,
+                "Jitter should be in [0, 1) range"
+            );
         }
     }
 }

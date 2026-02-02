@@ -108,10 +108,23 @@ impl BotReport {
     pub fn to_summary(&self) -> String {
         let mut summary = String::new();
         summary.push_str("=== Bot Run Summary ===\n");
-        summary.push_str(&format!("Started:  {}\n", self.start_time.format("%Y-%m-%d %H:%M:%S UTC")));
-        summary.push_str(&format!("Finished: {}\n", self.end_time.format("%Y-%m-%d %H:%M:%S UTC")));
+        summary.push_str(&format!(
+            "Started:  {}\n",
+            self.start_time.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        summary.push_str(&format!(
+            "Finished: {}\n",
+            self.end_time.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         summary.push_str(&format!("Duration: {:.2} seconds\n", self.elapsed_secs));
-        summary.push_str(&format!("Status:   {}\n", if self.completed { "Completed" } else { "Interrupted" }));
+        summary.push_str(&format!(
+            "Status:   {}\n",
+            if self.completed {
+                "Completed"
+            } else {
+                "Interrupted"
+            }
+        ));
         if let Some(reason) = &self.stop_reason {
             summary.push_str(&format!("Reason:   {}\n", reason));
         }
@@ -188,7 +201,10 @@ mod tests {
         report.finalize(true, Some("Completed successfully".to_string()));
 
         assert!(report.completed);
-        assert_eq!(report.stop_reason, Some("Completed successfully".to_string()));
+        assert_eq!(
+            report.stop_reason,
+            Some("Completed successfully".to_string())
+        );
         assert!(report.elapsed_secs >= 0.0);
     }
 

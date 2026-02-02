@@ -1,15 +1,14 @@
 use crate::error::MwApiError;
 use hmac::{Hmac, Mac};
+use oauth2::reqwest::async_http_client;
+use oauth2::{
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, RefreshToken,
+    Scope, TokenResponse as OAuth2TokenResponse, TokenUrl, basic::BasicClient,
+};
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    RedirectUrl, TokenResponse as OAuth2TokenResponse, TokenUrl,
-    basic::BasicClient, RefreshToken, Scope,
-};
-use oauth2::reqwest::async_http_client;
-use serde::{Deserialize, Serialize};
 
 type HmacSha1 = Hmac<Sha1>;
 
@@ -69,7 +68,10 @@ impl std::fmt::Debug for TokenResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenResponse")
             .field("access_token", &"***REDACTED***")
-            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "***REDACTED***"))
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "***REDACTED***"),
+            )
             .field("expires_in", &self.expires_in)
             .field("issued_at", &self.issued_at)
             .finish()
@@ -145,8 +147,10 @@ pub fn oauth1_sign_request(
     );
 
     // Generate signature
-    let mut mac = HmacSha1::new_from_slice(signing_key.as_bytes())
-        .map_err(|e| MwApiError::AuthError { reason: format!("HMAC error: {}", e) })?;
+    let mut mac =
+        HmacSha1::new_from_slice(signing_key.as_bytes()).map_err(|e| MwApiError::AuthError {
+            reason: format!("HMAC error: {}", e),
+        })?;
     mac.update(base_string.as_bytes());
     use base64::Engine;
     let signature = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
@@ -173,7 +177,7 @@ fn generate_nonce() -> String {
 /// Percent-encode a string according to RFC 3986
 /// Only allows unreserved characters (ALPHA, DIGIT, '-', '.', '_', '~')
 fn percent_encode(s: &str) -> String {
-    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+    use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
     // Define the set of characters that should be percent-encoded
     // Per RFC 3986, unreserved characters are: ALPHA / DIGIT / "-" / "." / "_" / "~"
@@ -212,7 +216,9 @@ fn percent_encode(s: &str) -> String {
 }
 
 /// Generate OAuth 2.0 authorization URL with PKCE
-pub async fn oauth2_authorization_url(config: &OAuth2Config) -> Result<(String, String, String), MwApiError> {
+pub async fn oauth2_authorization_url(
+    config: &OAuth2Config,
+) -> Result<(String, String, String), MwApiError> {
     let client = build_oauth2_client(config)?;
 
     // Generate PKCE challenge
@@ -225,7 +231,11 @@ pub async fn oauth2_authorization_url(config: &OAuth2Config) -> Result<(String, 
         .set_pkce_challenge(pkce_challenge)
         .url();
 
-    Ok((auth_url.to_string(), csrf_state.secret().clone(), pkce_verifier.secret().clone()))
+    Ok((
+        auth_url.to_string(),
+        csrf_state.secret().clone(),
+        pkce_verifier.secret().clone(),
+    ))
 }
 
 /// Exchange authorization code for access token with PKCE
@@ -251,7 +261,7 @@ pub async fn oauth2_exchange_code(
         .request_async(async_http_client)
         .await
         .map_err(|e| MwApiError::AuthError {
-            reason: format!("OAuth2 token exchange failed: {}", e)
+            reason: format!("OAuth2 token exchange failed: {}", e),
         })?;
 
     Ok(TokenResponse {
@@ -274,7 +284,7 @@ pub async fn oauth2_refresh_token(
         .request_async(async_http_client)
         .await
         .map_err(|e| MwApiError::AuthError {
-            reason: format!("OAuth2 token refresh failed: {}", e)
+            reason: format!("OAuth2 token refresh failed: {}", e),
         })?;
 
     Ok(TokenResponse {
@@ -287,14 +297,14 @@ pub async fn oauth2_refresh_token(
 
 /// Build OAuth 2.0 client
 fn build_oauth2_client(config: &OAuth2Config) -> Result<BasicClient, MwApiError> {
-    let auth_url = AuthUrl::new(config.auth_endpoint.clone())
-        .map_err(|e| MwApiError::AuthError {
-            reason: format!("Invalid auth URL: {}", e)
+    let auth_url =
+        AuthUrl::new(config.auth_endpoint.clone()).map_err(|e| MwApiError::AuthError {
+            reason: format!("Invalid auth URL: {}", e),
         })?;
 
-    let token_url = TokenUrl::new(config.token_endpoint.clone())
-        .map_err(|e| MwApiError::AuthError {
-            reason: format!("Invalid token URL: {}", e)
+    let token_url =
+        TokenUrl::new(config.token_endpoint.clone()).map_err(|e| MwApiError::AuthError {
+            reason: format!("Invalid token URL: {}", e),
         })?;
 
     Ok(BasicClient::new(
@@ -303,12 +313,11 @@ fn build_oauth2_client(config: &OAuth2Config) -> Result<BasicClient, MwApiError>
         auth_url,
         Some(token_url),
     )
-    .set_redirect_uri(
-        RedirectUrl::new(config.redirect_uri.clone())
-            .map_err(|e| MwApiError::AuthError {
-                reason: format!("Invalid redirect URI: {}", e)
-            })?
-    ))
+    .set_redirect_uri(RedirectUrl::new(config.redirect_uri.clone()).map_err(|e| {
+        MwApiError::AuthError {
+            reason: format!("Invalid redirect URI: {}", e),
+        }
+    })?))
 }
 
 /// OAuth session manager (handles token lifecycle)

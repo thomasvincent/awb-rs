@@ -1,0 +1,47 @@
+<UserControl x:Class="AWBrowser.Views.EditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="5"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Original Text (Before) -->
+        <DockPanel Grid.Row="0">
+            <Label DockPanel.Dock="Top" Content="Before (Original)" FontWeight="Bold" Background="#FFF0F0F0"/>
+            <TextBox x:Name="BeforeTextBox"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="11"
+                     TextWrapping="NoWrap"
+                     Background="#FFFEF5F5"/>
+        </DockPanel>
+
+        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"/>
+
+        <!-- Modified Text (After) -->
+        <DockPanel Grid.Row="2">
+            <Label DockPanel.Dock="Top" Content="After (Modified)" FontWeight="Bold" Background="#FFF0F0F0"/>
+            <TextBox x:Name="AfterTextBox"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="11"
+                     TextWrapping="NoWrap"
+                     Background="#FFF5FEF5"/>
+        </DockPanel>
+    </Grid>
+</UserControl>

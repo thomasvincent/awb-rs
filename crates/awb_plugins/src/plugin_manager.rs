@@ -58,28 +58,24 @@ impl PluginManager {
 
             if path.is_file() {
                 match path.extension().and_then(|s| s.to_str()) {
-                    Some("lua") => {
-                        match self.load_lua_plugin(&path) {
-                            Ok(name) => {
-                                info!("Loaded Lua plugin: {}", name);
-                                loaded_count += 1;
-                            }
-                            Err(e) => {
-                                warn!("Failed to load Lua plugin {}: {}", path.display(), e);
-                            }
+                    Some("lua") => match self.load_lua_plugin(&path) {
+                        Ok(name) => {
+                            info!("Loaded Lua plugin: {}", name);
+                            loaded_count += 1;
                         }
-                    }
-                    Some("wasm") => {
-                        match self.load_wasm_plugin(&path) {
-                            Ok(name) => {
-                                info!("Loaded WASM plugin: {}", name);
-                                loaded_count += 1;
-                            }
-                            Err(e) => {
-                                warn!("Failed to load WASM plugin {}: {}", path.display(), e);
-                            }
+                        Err(e) => {
+                            warn!("Failed to load Lua plugin {}: {}", path.display(), e);
                         }
-                    }
+                    },
+                    Some("wasm") => match self.load_wasm_plugin(&path) {
+                        Ok(name) => {
+                            info!("Loaded WASM plugin: {}", name);
+                            loaded_count += 1;
+                        }
+                        Err(e) => {
+                            warn!("Failed to load WASM plugin {}: {}", path.display(), e);
+                        }
+                    },
                     _ => {
                         debug!("Skipping non-plugin file: {}", path.display());
                     }
@@ -87,11 +83,7 @@ impl PluginManager {
             }
         }
 
-        info!(
-            "Loaded {} plugins from {}",
-            loaded_count,
-            dir.display()
-        );
+        info!("Loaded {} plugins from {}", loaded_count, dir.display());
 
         Ok(loaded_count)
     }
@@ -186,9 +178,10 @@ impl PluginManager {
 
     /// Apply a specific plugin by name
     pub fn apply_plugin(&self, name: &str, input: &str) -> Result<String> {
-        let plugin = self.plugins.get(name).ok_or_else(|| {
-            PluginError::LoadFailed(format!("Plugin '{}' not found", name))
-        })?;
+        let plugin = self
+            .plugins
+            .get(name)
+            .ok_or_else(|| PluginError::LoadFailed(format!("Plugin '{}' not found", name)))?;
 
         if !self.is_enabled(name) {
             return Ok(input.to_string());
@@ -261,12 +254,10 @@ impl FixModule for PluginFixModule {
     }
 
     fn apply(&self, text: &str, _context: &FixContext) -> String {
-        self.manager
-            .apply_all(text)
-            .unwrap_or_else(|e| {
-                warn!("Plugin execution failed: {}", e);
-                text.to_string()
-            })
+        self.manager.apply_all(text).unwrap_or_else(|e| {
+            warn!("Plugin execution failed: {}", e);
+            text.to_string()
+        })
     }
 
     fn default_enabled(&self) -> bool {

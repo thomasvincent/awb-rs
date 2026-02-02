@@ -3,7 +3,7 @@ use awb_domain::types::*;
 use awb_mw_api::client::{EditRequest, MediaWikiClient, ReqwestMwClient};
 use awb_mw_api::error::MwApiError;
 use std::time::Duration;
-use wiremock::matchers::{method, query_param, body_string_contains};
+use wiremock::matchers::{body_string_contains, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper to create a test client pointing at a mock server
@@ -53,7 +53,11 @@ async fn test_login_success() {
     let client = create_test_client(&mock_server.uri());
     let result = client.login_bot_password("TestBot", "testpass").await;
 
-    assert!(result.is_ok(), "Login should succeed, got error: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Login should succeed, got error: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -381,7 +385,11 @@ async fn test_list_category_members() {
     let result = awb_mw_api::list_endpoints::fetch_all_pages(
         &client,
         &api_url,
-        &[("action", "query"), ("list", "categorymembers"), ("cmtitle", "Category:Test")],
+        &[
+            ("action", "query"),
+            ("list", "categorymembers"),
+            ("cmtitle", "Category:Test"),
+        ],
         "categorymembers",
         "cmcontinue",
     )

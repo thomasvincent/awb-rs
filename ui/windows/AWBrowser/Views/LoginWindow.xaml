@@ -1,0 +1,51 @@
+<Window x:Class="AWBrowser.Views.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Login to Wiki"
+        Height="300" Width="450"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Label Grid.Row="0" Content="Wiki URL:" FontWeight="Bold"/>
+        <TextBox x:Name="WikiUrlTextBox"
+                 Grid.Row="1"
+                 Text="https://en.wikipedia.org/w/api.php"
+                 Margin="0,0,0,10"/>
+
+        <Label Grid.Row="2" Content="Username:" FontWeight="Bold"/>
+        <TextBox x:Name="UsernameTextBox"
+                 Grid.Row="3"
+                 Margin="0,0,0,10"/>
+
+        <Label Grid.Row="4" Content="Password:" FontWeight="Bold"/>
+        <PasswordBox x:Name="PasswordBox"
+                     Grid.Row="5"
+                     Margin="0,0,0,10"/>
+
+        <StackPanel Grid.Row="6"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="Login"
+                    Click="Login_Click"
+                    IsDefault="True"
+                    Width="100"
+                    Margin="5"/>
+            <Button Content="Cancel"
+                    Click="Cancel_Click"
+                    IsCancel="True"
+                    Width="100"
+                    Margin="5"/>
+        </StackPanel>
+    </Grid>
+</Window>

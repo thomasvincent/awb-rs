@@ -1,5 +1,5 @@
-use awb_domain::types::*;
 use awb_domain::session::*;
+use awb_domain::types::*;
 use awb_domain::warnings::Warning;
 
 #[derive(Debug, Clone)]
@@ -8,7 +8,7 @@ pub enum ReviewState {
     LoadingList,
     FetchingPage { index: usize },
     ApplyingRules { index: usize },
-    AwaitingDecision { plan: EditPlan },
+    AwaitingDecision { plan: Box<EditPlan> },
     Saving { index: usize },
     Paused { index: usize },
     Completed { stats: SessionStats },
@@ -34,7 +34,11 @@ pub enum ReviewSideEffect {
     FetchPage(Title),
     ApplyRules(PageContent),
     PresentForReview(EditPlan),
-    ExecuteEdit { title: Title, new_text: String, summary: String },
+    ExecuteEdit {
+        title: Title,
+        new_text: String,
+        summary: String,
+    },
     PersistSession,
     EmitWarning(Warning),
     ShowComplete(SessionStats),
@@ -62,7 +66,13 @@ impl ReviewStateMachine {
             state: ReviewState::Idle,
             page_list: Vec::new(),
             current_index: 0,
-            stats: SessionStats { total: 0, saved: 0, skipped: 0, errors: 0, elapsed_secs: 0.0 },
+            stats: SessionStats {
+                total: 0,
+                saved: 0,
+                skipped: 0,
+                errors: 0,
+                elapsed_secs: 0.0,
+            },
         }
     }
 
@@ -81,7 +91,9 @@ impl ReviewStateMachine {
                     self.state = ReviewState::FetchingPage { index: 0 };
                     effects.push(ReviewSideEffect::FetchPage(title.clone()));
                 } else {
-                    self.state = ReviewState::Completed { stats: self.stats.clone() };
+                    self.state = ReviewState::Completed {
+                        stats: self.stats.clone(),
+                    };
                     effects.push(ReviewSideEffect::ShowComplete(self.stats.clone()));
                 }
             }
@@ -91,7 +103,7 @@ impl ReviewStateMachine {
                 effects.push(ReviewSideEffect::ApplyRules(page));
             }
             (ReviewState::ApplyingRules { .. }, ReviewEvent::RulesApplied(plan)) => {
-                self.state = ReviewState::AwaitingDecision { plan: plan.clone() };
+                self.state = ReviewState::AwaitingDecision { plan: Box::new(plan.clone()) };
                 effects.push(ReviewSideEffect::PresentForReview(plan));
             }
             (ReviewState::AwaitingDecision { plan }, ReviewEvent::UserDecision(decision)) => {
@@ -110,7 +122,9 @@ impl ReviewStateMachine {
                         self.advance(&mut effects);
                     }
                     EditDecision::Pause => {
-                        self.state = ReviewState::Paused { index: self.current_index };
+                        self.state = ReviewState::Paused {
+                            index: self.current_index,
+                        };
                         effects.push(ReviewSideEffect::PersistSession);
                     }
                     EditDecision::OpenInBrowser => {
@@ -128,7 +142,10 @@ impl ReviewStateMachine {
             }
             (ReviewState::Saving { index }, ReviewEvent::SaveFailed(err)) => {
                 self.stats.errors += 1;
-                self.state = ReviewState::Error { error: err, index: *index };
+                self.state = ReviewState::Error {
+                    error: err,
+                    index: *index,
+                };
             }
             (ReviewState::Error { index: _, .. }, ReviewEvent::Resume) => {
                 self.advance(&mut effects);
@@ -137,7 +154,9 @@ impl ReviewStateMachine {
                 self.advance(&mut effects);
             }
             (_, ReviewEvent::Stop) => {
-                self.state = ReviewState::Completed { stats: self.stats.clone() };
+                self.state = ReviewState::Completed {
+                    stats: self.stats.clone(),
+                };
                 effects.push(ReviewSideEffect::PersistSession);
                 effects.push(ReviewSideEffect::ShowComplete(self.stats.clone()));
             }
@@ -152,16 +171,22 @@ impl ReviewStateMachine {
         self.current_index += 1;
         if self.current_index < self.page_list.len() {
             let title = self.page_list[self.current_index].clone();
-            self.state = ReviewState::FetchingPage { index: self.current_index };
+            self.state = ReviewState::FetchingPage {
+                index: self.current_index,
+            };
             effects.push(ReviewSideEffect::FetchPage(title));
         } else {
-            self.state = ReviewState::Completed { stats: self.stats.clone() };
+            self.state = ReviewState::Completed {
+                stats: self.stats.clone(),
+            };
             effects.push(ReviewSideEffect::PersistSession);
             effects.push(ReviewSideEffect::ShowComplete(self.stats.clone()));
         }
     }
 
-    pub fn state(&self) -> &ReviewState { &self.state }
+    pub fn state(&self) -> &ReviewState {
+        &self.state
+    }
 }
 
 impl Default for ReviewStateMachine {
@@ -241,7 +266,10 @@ mod tests {
         let titles = vec![create_test_title("Page1"), create_test_title("Page2")];
         let effects = machine.transition(ReviewEvent::ListLoaded(titles.clone()));
 
-        assert!(matches!(machine.state, ReviewState::FetchingPage { index: 0 }));
+        assert!(matches!(
+            machine.state,
+            ReviewState::FetchingPage { index: 0 }
+        ));
         assert_eq!(machine.stats.total, 2);
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], ReviewSideEffect::FetchPage(_)));
@@ -258,7 +286,10 @@ mod tests {
         let page = create_test_page(title);
         let effects = machine.transition(ReviewEvent::PageFetched(page.clone()));
 
-        assert!(matches!(machine.state, ReviewState::ApplyingRules { index: 0 }));
+        assert!(matches!(
+            machine.state,
+            ReviewState::ApplyingRules { index: 0 }
+        ));
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], ReviewSideEffect::ApplyRules(_)));
     }
@@ -277,7 +308,10 @@ mod tests {
         let plan = create_test_plan(page);
         let effects = machine.transition(ReviewEvent::RulesApplied(plan.clone()));
 
-        assert!(matches!(machine.state, ReviewState::AwaitingDecision { .. }));
+        assert!(matches!(
+            machine.state,
+            ReviewState::AwaitingDecision { .. }
+        ));
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], ReviewSideEffect::PresentForReview(_)));
     }
@@ -321,7 +355,10 @@ mod tests {
 
         assert_eq!(machine.stats.skipped, 1);
         // Should advance to next page
-        assert!(matches!(machine.state, ReviewState::FetchingPage { index: 1 }));
+        assert!(matches!(
+            machine.state,
+            ReviewState::FetchingPage { index: 1 }
+        ));
     }
 
     #[test]
@@ -341,7 +378,11 @@ mod tests {
         let effects = machine.transition(ReviewEvent::UserDecision(EditDecision::Pause));
 
         assert!(matches!(machine.state, ReviewState::Paused { index: 0 }));
-        assert!(effects.iter().any(|e| matches!(e, ReviewSideEffect::PersistSession)));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, ReviewSideEffect::PersistSession))
+        );
     }
 
     #[test]
@@ -362,7 +403,9 @@ mod tests {
         let result = EditResult {
             page_id: PageId(1),
             new_revision: Some(RevisionId(101)),
-            outcome: EditOutcome::Saved { revision: RevisionId(101) },
+            outcome: EditOutcome::Saved {
+                revision: RevisionId(101),
+            },
             timestamp: chrono::Utc::now(),
         };
 
@@ -412,7 +455,10 @@ mod tests {
         let effects = machine.transition(ReviewEvent::Resume);
 
         // Should advance to next page
-        assert!(matches!(machine.state, ReviewState::FetchingPage { index: 1 }));
+        assert!(matches!(
+            machine.state,
+            ReviewState::FetchingPage { index: 1 }
+        ));
     }
 
     #[test]
@@ -426,8 +472,16 @@ mod tests {
         let effects = machine.transition(ReviewEvent::Stop);
 
         assert!(matches!(machine.state, ReviewState::Completed { .. }));
-        assert!(effects.iter().any(|e| matches!(e, ReviewSideEffect::PersistSession)));
-        assert!(effects.iter().any(|e| matches!(e, ReviewSideEffect::ShowComplete(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, ReviewSideEffect::PersistSession))
+        );
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, ReviewSideEffect::ShowComplete(_)))
+        );
     }
 
     #[test]
@@ -467,7 +521,9 @@ mod tests {
         machine.transition(ReviewEvent::SaveComplete(EditResult {
             page_id: PageId(1),
             new_revision: Some(RevisionId(101)),
-            outcome: EditOutcome::Saved { revision: RevisionId(101) },
+            outcome: EditOutcome::Saved {
+                revision: RevisionId(101),
+            },
             timestamp: chrono::Utc::now(),
         }));
 
@@ -491,7 +547,9 @@ mod tests {
         machine.transition(ReviewEvent::SaveComplete(EditResult {
             page_id: PageId(1),
             new_revision: Some(RevisionId(102)),
-            outcome: EditOutcome::Saved { revision: RevisionId(102) },
+            outcome: EditOutcome::Saved {
+                revision: RevisionId(102),
+            },
             timestamp: chrono::Utc::now(),
         }));
 

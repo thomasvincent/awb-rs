@@ -26,9 +26,7 @@ fn test_bot_config_builder_chain() {
 #[test]
 fn test_bot_config_partial_builder() {
     // Test that builder allows partial configuration
-    let config = BotConfig::new()
-        .with_max_edits(50)
-        .with_dry_run(true);
+    let config = BotConfig::new().with_max_edits(50).with_dry_run(true);
 
     assert_eq!(config.max_edits, Some(50));
     assert!(config.dry_run);
@@ -240,8 +238,7 @@ fn test_bot_config_emergency_stop_file() {
     let temp_dir = TempDir::new().unwrap();
     let stop_file = temp_dir.path().join("emergency.stop");
 
-    let config = BotConfig::new()
-        .with_emergency_stop_file(stop_file.clone());
+    let config = BotConfig::new().with_emergency_stop_file(stop_file.clone());
 
     assert_eq!(config.emergency_stop_file, stop_file);
 }
@@ -299,7 +296,10 @@ fn test_bot_report_interrupted_run() {
     report.finalize(false, Some("Emergency stop triggered".to_string()));
 
     assert!(!report.completed);
-    assert_eq!(report.stop_reason, Some("Emergency stop triggered".to_string()));
+    assert_eq!(
+        report.stop_reason,
+        Some("Emergency stop triggered".to_string())
+    );
 
     let summary = report.to_summary();
     assert!(summary.contains("Status:   Interrupted"));

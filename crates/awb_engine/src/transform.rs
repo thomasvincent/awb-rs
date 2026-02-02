@@ -1,18 +1,32 @@
 use awb_domain::rules::{RuleKind, RuleSet};
-use awb_domain::types::PageContent;
 use awb_domain::session::EditPlan;
+use awb_domain::types::PageContent;
 use awb_domain::warnings::Warning;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TransformError {
     #[error("Rule {rule_id} has invalid regex: {source}")]
-    InvalidRegex { rule_id: uuid::Uuid, source: regex::Error },
+    InvalidRegex {
+        rule_id: uuid::Uuid,
+        source: regex::Error,
+    },
 }
 
 enum CompiledRule {
-    Plain { find: String, replace: String, case_sensitive: bool, id: uuid::Uuid, comment: Option<String> },
-    Regex { regex: regex::Regex, replacement: String, id: uuid::Uuid, comment: Option<String> },
+    Plain {
+        find: String,
+        replace: String,
+        case_sensitive: bool,
+        id: uuid::Uuid,
+        comment: Option<String>,
+    },
+    Regex {
+        regex: regex::Regex,
+        replacement: String,
+        id: uuid::Uuid,
+        comment: Option<String>,
+    },
 }
 
 pub struct TransformEngine {
@@ -22,23 +36,52 @@ pub struct TransformEngine {
 }
 
 impl TransformEngine {
-    pub fn new(rule_set: &RuleSet, fix_registry: crate::general_fixes::FixRegistry, enabled_fixes: std::collections::HashSet<String>) -> Result<Self, TransformError> {
+    pub fn new(
+        rule_set: &RuleSet,
+        fix_registry: crate::general_fixes::FixRegistry,
+        enabled_fixes: std::collections::HashSet<String>,
+    ) -> Result<Self, TransformError> {
         // Compile each enabled rule
-        let compiled = rule_set.enabled_rules().map(|rule| {
-            match &rule.kind {
-                RuleKind::Plain { find, replace, case_sensitive } => {
-                    Ok(CompiledRule::Plain { find: find.clone(), replace: replace.clone(), case_sensitive: *case_sensitive, id: rule.id, comment: rule.comment_fragment.clone() })
-                }
-                RuleKind::Regex { pattern, replacement, case_insensitive } => {
+        let compiled = rule_set
+            .enabled_rules()
+            .map(|rule| match &rule.kind {
+                RuleKind::Plain {
+                    find,
+                    replace,
+                    case_sensitive,
+                } => Ok(CompiledRule::Plain {
+                    find: find.clone(),
+                    replace: replace.clone(),
+                    case_sensitive: *case_sensitive,
+                    id: rule.id,
+                    comment: rule.comment_fragment.clone(),
+                }),
+                RuleKind::Regex {
+                    pattern,
+                    replacement,
+                    case_insensitive,
+                } => {
                     let regex = regex::RegexBuilder::new(pattern)
                         .case_insensitive(*case_insensitive)
                         .build()
-                        .map_err(|e| TransformError::InvalidRegex { rule_id: rule.id, source: e })?;
-                    Ok(CompiledRule::Regex { regex, replacement: replacement.clone(), id: rule.id, comment: rule.comment_fragment.clone() })
+                        .map_err(|e| TransformError::InvalidRegex {
+                            rule_id: rule.id,
+                            source: e,
+                        })?;
+                    Ok(CompiledRule::Regex {
+                        regex,
+                        replacement: replacement.clone(),
+                        id: rule.id,
+                        comment: rule.comment_fragment.clone(),
+                    })
                 }
-            }
-        }).collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { compiled_rules: compiled, fix_registry, enabled_fixes })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            compiled_rules: compiled,
+            fix_registry,
+            enabled_fixes,
+        })
     }
 
     pub fn apply(&self, page: &PageContent) -> EditPlan {
@@ -50,7 +93,13 @@ impl TransformEngine {
         // Apply rules
         for rule in &self.compiled_rules {
             let (new_text, id, comment) = match rule {
-                CompiledRule::Plain { find, replace, case_sensitive, id, comment } => {
+                CompiledRule::Plain {
+                    find,
+                    replace,
+                    case_sensitive,
+                    id,
+                    comment,
+                } => {
                     let new = if *case_sensitive {
                         text.replace(find.as_str(), replace.as_str())
                     } else {
@@ -63,7 +112,12 @@ impl TransformEngine {
                     };
                     (new, *id, comment)
                 }
-                CompiledRule::Regex { regex, replacement, id, comment } => {
+                CompiledRule::Regex {
+                    regex,
+                    replacement,
+                    id,
+                    comment,
+                } => {
                     let new = regex.replace_all(&text, replacement.as_str()).into_owned();
                     (new, *id, comment)
                 }
@@ -86,7 +140,10 @@ impl TransformEngine {
 
         let mut fixes_applied = Vec::new();
         let mut current_text = text.clone();
-        for (id, new_text) in self.fix_registry.apply_all_returning_ids(&text, &ctx, &self.enabled_fixes) {
+        for (id, new_text) in
+            self.fix_registry
+                .apply_all_returning_ids(&text, &ctx, &self.enabled_fixes)
+        {
             if new_text != current_text {
                 fixes_applied.push(id);
                 current_text = new_text;
@@ -101,7 +158,11 @@ impl TransformEngine {
             let added = text.len().saturating_sub(page.wikitext.len());
             let removed = page.wikitext.len().saturating_sub(text.len());
             if added + removed > 500 {
-                warnings.push(Warning::LargeChange { added, removed, threshold: 500 });
+                warnings.push(Warning::LargeChange {
+                    added,
+                    removed,
+                    threshold: 500,
+                });
             }
         }
 
@@ -249,7 +310,11 @@ mod tests {
         let page = create_test_page("small text");
         let plan = engine.apply(&page);
 
-        assert!(plan.warnings.iter().any(|w| matches!(w, Warning::LargeChange { .. })));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| matches!(w, Warning::LargeChange { .. }))
+        );
     }
 
     #[test]

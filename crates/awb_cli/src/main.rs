@@ -170,6 +170,8 @@ enum ListSource {
     WhatLinksHere,
     Search,
     File,
+    Watchlist,
+    UserContribs,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -192,30 +194,61 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Login { wiki, username, profile } => {
-            commands::login::run(wiki, username, profile).await
+        Commands::Login {
+            wiki,
+            username,
+            profile,
+        } => commands::login::run(wiki, username, profile).await,
+        Commands::List {
+            wiki,
+            source,
+            query,
+            limit,
+        } => commands::list::run(wiki, source, query, limit).await,
+        Commands::Run {
+            wiki,
+            profile,
+            batch,
+            dry_run,
+            auth_profile,
+        } => commands::run::run(wiki, profile, batch, dry_run, auth_profile).await,
+        Commands::ExportLog { format, output } => commands::export::run(format, output).await,
+        Commands::Bot {
+            wiki,
+            profile,
+            max_edits,
+            dry_run,
+            checkpoint,
+            auth_profile,
+            skip_no_change,
+            skip_on_warning,
+            log_every_n,
+        } => {
+            commands::bot::run(
+                wiki,
+                profile,
+                max_edits,
+                dry_run,
+                checkpoint,
+                auth_profile,
+                skip_no_change,
+                skip_on_warning,
+                log_every_n,
+            )
+            .await
         }
-        Commands::List { wiki, source, query, limit } => {
-            commands::list::run(wiki, source, query, limit).await
-        }
-        Commands::Run { wiki, profile, batch, dry_run, auth_profile } => {
-            commands::run::run(wiki, profile, batch, dry_run, auth_profile).await
-        }
-        Commands::ExportLog { format, output } => {
-            commands::export::run(format, output).await
-        }
-        Commands::Bot { wiki, profile, max_edits, dry_run, checkpoint, auth_profile, skip_no_change, skip_on_warning, log_every_n } => {
-            commands::bot::run(wiki, profile, max_edits, dry_run, checkpoint, auth_profile, skip_no_change, skip_on_warning, log_every_n).await
-        }
-        Commands::OAuth(oauth_cmd) => {
-            match oauth_cmd {
-                OAuthCommands::Setup { wiki, consumer_key, access_token, profile } => {
-                    commands::oauth::setup(wiki, consumer_key, access_token, profile).await
-                }
-                OAuthCommands::Authorize { wiki, client_id, profile } => {
-                    commands::oauth::authorize(wiki, client_id, profile).await
-                }
-            }
-        }
+        Commands::OAuth(oauth_cmd) => match oauth_cmd {
+            OAuthCommands::Setup {
+                wiki,
+                consumer_key,
+                access_token,
+                profile,
+            } => commands::oauth::setup(wiki, consumer_key, access_token, profile).await,
+            OAuthCommands::Authorize {
+                wiki,
+                client_id,
+                profile,
+            } => commands::oauth::authorize(wiki, client_id, profile).await,
+        },
     }
 }

@@ -3,10 +3,25 @@ use std::ops::Range;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DiffOp {
-    Equal { old_range: Range<usize>, new_range: Range<usize>, text: String },
-    Insert { new_range: Range<usize>, text: String },
-    Delete { old_range: Range<usize>, text: String },
-    Replace { old_range: Range<usize>, new_range: Range<usize>, old_text: String, new_text: String },
+    Equal {
+        old_range: Range<usize>,
+        new_range: Range<usize>,
+        text: String,
+    },
+    Insert {
+        new_range: Range<usize>,
+        text: String,
+    },
+    Delete {
+        old_range: Range<usize>,
+        text: String,
+    },
+    Replace {
+        old_range: Range<usize>,
+        new_range: Range<usize>,
+        old_text: String,
+        new_text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +67,11 @@ mod tests {
         };
 
         match op {
-            DiffOp::Equal { old_range, new_range, text } => {
+            DiffOp::Equal {
+                old_range,
+                new_range,
+                text,
+            } => {
                 assert_eq!(old_range, 0..10);
                 assert_eq!(new_range, 0..10);
                 assert_eq!(text, "unchanged");
@@ -103,7 +122,12 @@ mod tests {
         };
 
         match op {
-            DiffOp::Replace { old_range, new_range, old_text, new_text } => {
+            DiffOp::Replace {
+                old_range,
+                new_range,
+                old_text,
+                new_text,
+            } => {
                 assert_eq!(old_range, 0..5);
                 assert_eq!(new_range, 0..8);
                 assert_eq!(old_text, "old");

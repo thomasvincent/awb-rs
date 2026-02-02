@@ -50,8 +50,13 @@ async fn test_json_session_store_crash_safe_write() {
     store.save(&session).await.unwrap();
 
     // Check that temp file is cleaned up after successful write
-    let temp_path = temp_dir.path().join(format!("{}.json.tmp", session.session_id));
-    assert!(!temp_path.exists(), "Temp file should be cleaned up after successful write");
+    let temp_path = temp_dir
+        .path()
+        .join(format!("{}.json.tmp", session.session_id));
+    assert!(
+        !temp_path.exists(),
+        "Temp file should be cleaned up after successful write"
+    );
 
     // Check that final file exists
     let final_path = temp_dir.path().join(format!("{}.json", session.session_id));
@@ -179,7 +184,10 @@ fn test_toml_config_store_profiles() {
 
     assert_eq!(loaded.id, "enwiki");
     assert_eq!(loaded.name, "English Wikipedia");
-    assert_eq!(loaded.api_url.as_str(), "https://en.wikipedia.org/w/api.php");
+    assert_eq!(
+        loaded.api_url.as_str(),
+        "https://en.wikipedia.org/w/api.php"
+    );
     assert!(loaded.default_namespaces.contains(&Namespace::MAIN));
 }
 
@@ -268,7 +276,11 @@ fn test_toml_config_store_file_permissions() {
         use std::os::unix::fs::PermissionsExt;
         let metadata = std::fs::metadata(&config_path).unwrap();
         let mode = metadata.permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "Config file should have 0600 permissions");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "Config file should have 0600 permissions"
+        );
     }
 }
 
@@ -285,7 +297,9 @@ async fn test_session_with_skip_conditions() {
     allowed_namespaces.insert(Namespace::USER);
 
     session.skip_conditions = vec![
-        SkipCondition::Namespace { allowed: allowed_namespaces },
+        SkipCondition::Namespace {
+            allowed: allowed_namespaces,
+        },
         SkipCondition::PageSize {
             min_bytes: Some(100),
             max_bytes: Some(10000),

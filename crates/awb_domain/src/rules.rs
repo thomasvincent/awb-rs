@@ -11,22 +11,38 @@ pub struct Rule {
 }
 
 impl Rule {
-    pub fn new_plain(find: impl Into<String>, replace: impl Into<String>, case_sensitive: bool) -> Self {
+    pub fn new_plain(
+        find: impl Into<String>,
+        replace: impl Into<String>,
+        case_sensitive: bool,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             enabled: true,
             order: 0,
-            kind: RuleKind::Plain { find: find.into(), replace: replace.into(), case_sensitive },
+            kind: RuleKind::Plain {
+                find: find.into(),
+                replace: replace.into(),
+                case_sensitive,
+            },
             comment_fragment: None,
         }
     }
 
-    pub fn new_regex(pattern: impl Into<String>, replacement: impl Into<String>, case_insensitive: bool) -> Self {
+    pub fn new_regex(
+        pattern: impl Into<String>,
+        replacement: impl Into<String>,
+        case_insensitive: bool,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             enabled: true,
             order: 0,
-            kind: RuleKind::Regex { pattern: pattern.into(), replacement: replacement.into(), case_insensitive },
+            kind: RuleKind::Regex {
+                pattern: pattern.into(),
+                replacement: replacement.into(),
+                case_insensitive,
+            },
             comment_fragment: None,
         }
     }
@@ -34,8 +50,16 @@ impl Rule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RuleKind {
-    Plain { find: String, replace: String, case_sensitive: bool },
-    Regex { pattern: String, replacement: String, case_insensitive: bool },
+    Plain {
+        find: String,
+        replace: String,
+        case_sensitive: bool,
+    },
+    Regex {
+        pattern: String,
+        replacement: String,
+        case_insensitive: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,7 +68,9 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    pub fn new() -> Self { Self { rules: Vec::new() } }
+    pub fn new() -> Self {
+        Self { rules: Vec::new() }
+    }
 
     pub fn enabled_rules(&self) -> impl Iterator<Item = &Rule> {
         self.rules.iter().filter(|r| r.enabled)
@@ -67,7 +93,9 @@ impl RuleSet {
 }
 
 impl Default for RuleSet {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -80,7 +108,11 @@ mod tests {
         assert!(rule.enabled);
         assert_eq!(rule.order, 0);
         match rule.kind {
-            RuleKind::Plain { find, replace, case_sensitive } => {
+            RuleKind::Plain {
+                find,
+                replace,
+                case_sensitive,
+            } => {
                 assert_eq!(find, "find");
                 assert_eq!(replace, "replace");
                 assert!(case_sensitive);
@@ -94,7 +126,11 @@ mod tests {
         let rule = Rule::new_regex(r"\d+", "NUMBER", true);
         assert!(rule.enabled);
         match rule.kind {
-            RuleKind::Regex { pattern, replacement, case_insensitive } => {
+            RuleKind::Regex {
+                pattern,
+                replacement,
+                case_insensitive,
+            } => {
                 assert_eq!(pattern, r"\d+");
                 assert_eq!(replacement, "NUMBER");
                 assert!(case_insensitive);
@@ -188,8 +224,18 @@ mod tests {
 
         assert_eq!(deserialized.enabled, rule.enabled);
         match (rule.kind, deserialized.kind) {
-            (RuleKind::Plain { find: f1, replace: r1, case_sensitive: c1 },
-             RuleKind::Plain { find: f2, replace: r2, case_sensitive: c2 }) => {
+            (
+                RuleKind::Plain {
+                    find: f1,
+                    replace: r1,
+                    case_sensitive: c1,
+                },
+                RuleKind::Plain {
+                    find: f2,
+                    replace: r2,
+                    case_sensitive: c2,
+                },
+            ) => {
                 assert_eq!(f1, f2);
                 assert_eq!(r1, r2);
                 assert_eq!(c1, c2);

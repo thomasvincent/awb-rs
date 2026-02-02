@@ -4,9 +4,18 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Warning {
     NoChange,
-    LargeChange { added: usize, removed: usize, threshold: usize },
-    RegexError { rule_id: Uuid, message: String },
-    SuspiciousPattern { description: String },
+    LargeChange {
+        added: usize,
+        removed: usize,
+        threshold: usize,
+    },
+    RegexError {
+        rule_id: Uuid,
+        message: String,
+    },
+    SuspiciousPattern {
+        description: String,
+    },
 }
 
 #[cfg(test)]
@@ -31,7 +40,11 @@ mod tests {
         };
 
         match warning {
-            Warning::LargeChange { added, removed, threshold } => {
+            Warning::LargeChange {
+                added,
+                removed,
+                threshold,
+            } => {
                 assert_eq!(added, 1000);
                 assert_eq!(removed, 500);
                 assert_eq!(threshold, 500);
@@ -49,7 +62,10 @@ mod tests {
         };
 
         match warning {
-            Warning::RegexError { rule_id: id, message } => {
+            Warning::RegexError {
+                rule_id: id,
+                message,
+            } => {
                 assert_eq!(id, rule_id);
                 assert_eq!(message, "Invalid pattern");
             }
@@ -83,7 +99,11 @@ mod tests {
         let deserialized: Warning = serde_json::from_str(&json).unwrap();
 
         match deserialized {
-            Warning::LargeChange { added, removed, threshold } => {
+            Warning::LargeChange {
+                added,
+                removed,
+                threshold,
+            } => {
                 assert_eq!(added, 100);
                 assert_eq!(removed, 50);
                 assert_eq!(threshold, 75);

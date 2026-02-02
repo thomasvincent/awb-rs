@@ -1,7 +1,7 @@
+use crate::types::Namespace;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
-use crate::types::Namespace;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -15,38 +15,48 @@ pub struct Profile {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthMethod {
-    BotPassword { username: String },
+    BotPassword {
+        username: String,
+    },
     OAuth1 {
         consumer_key: String,
         consumer_secret: String,
         access_token: String,
         access_secret: String,
     },
-    OAuth2 { client_id: String, client_secret: String },
+    OAuth2 {
+        client_id: String,
+        client_secret: String,
+    },
 }
 
 impl std::fmt::Debug for AuthMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AuthMethod::BotPassword { username } => {
-                f.debug_struct("BotPassword")
-                    .field("username", username)
-                    .finish()
-            }
-            AuthMethod::OAuth1 { consumer_key, consumer_secret: _, access_token, access_secret: _ } => {
-                f.debug_struct("OAuth1")
-                    .field("consumer_key", consumer_key)
-                    .field("consumer_secret", &"***REDACTED***")
-                    .field("access_token", access_token)
-                    .field("access_secret", &"***REDACTED***")
-                    .finish()
-            }
-            AuthMethod::OAuth2 { client_id, client_secret: _ } => {
-                f.debug_struct("OAuth2")
-                    .field("client_id", client_id)
-                    .field("client_secret", &"***REDACTED***")
-                    .finish()
-            }
+            AuthMethod::BotPassword { username } => f
+                .debug_struct("BotPassword")
+                .field("username", username)
+                .finish(),
+            AuthMethod::OAuth1 {
+                consumer_key,
+                consumer_secret: _,
+                access_token,
+                access_secret: _,
+            } => f
+                .debug_struct("OAuth1")
+                .field("consumer_key", consumer_key)
+                .field("consumer_secret", &"***REDACTED***")
+                .field("access_token", access_token)
+                .field("access_secret", &"***REDACTED***")
+                .finish(),
+            AuthMethod::OAuth2 {
+                client_id,
+                client_secret: _,
+            } => f
+                .debug_struct("OAuth2")
+                .field("client_id", client_id)
+                .field("client_secret", &"***REDACTED***")
+                .finish(),
         }
     }
 }
@@ -137,7 +147,10 @@ mod tests {
         };
 
         match auth {
-            AuthMethod::OAuth2 { client_id, client_secret } => {
+            AuthMethod::OAuth2 {
+                client_id,
+                client_secret,
+            } => {
                 assert_eq!(client_id, "client123");
                 assert_eq!(client_secret, "secret456");
             }

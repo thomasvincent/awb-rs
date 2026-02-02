@@ -23,7 +23,8 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
         .context("Failed to create HTTP client")?;
 
     print!("Authenticating... ");
-    client.login_bot_password(&username, &password)
+    client
+        .login_bot_password(&username, &password)
         .await
         .context("Authentication failed")?;
 
@@ -31,12 +32,16 @@ pub async fn run(wiki: Url, username: String, profile: String) -> Result<()> {
 
     // Store credentials in OS keychain
     let cred_store = KeyringCredentialStore::new();
-    cred_store.set_password(&profile, &password)
+    cred_store
+        .set_password(&profile, &password)
         .context("Failed to store credentials in keychain")?;
 
     println!();
     println!("{}", style("Login successful!").green().bold());
-    println!("Credentials stored under profile: {}", style(&profile).yellow());
+    println!(
+        "Credentials stored under profile: {}",
+        style(&profile).yellow()
+    );
     println!();
     println!("Credentials saved to OS keychain (service: awb-rs)");
 

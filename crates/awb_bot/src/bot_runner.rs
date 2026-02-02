@@ -1,9 +1,9 @@
-use crate::config::BotConfig;
-use crate::report::{BotReport, PageResult, PageAction};
 use crate::checkpoint::Checkpoint;
+use crate::config::BotConfig;
+use crate::report::{BotReport, PageAction, PageResult};
 use awb_domain::types::Title;
 use awb_engine::transform::TransformEngine;
-use awb_mw_api::client::{MediaWikiClient, EditRequest};
+use awb_mw_api::client::{EditRequest, MediaWikiClient};
 use awb_telemetry::TelemetryEvent;
 use chrono::Utc;
 use std::path::Path;
@@ -50,12 +50,7 @@ pub struct BotRunner<C: MediaWikiClient> {
 
 impl<C: MediaWikiClient> BotRunner<C> {
     /// Create a new bot runner
-    pub fn new(
-        config: BotConfig,
-        client: C,
-        engine: TransformEngine,
-        pages: Vec<String>,
-    ) -> Self {
+    pub fn new(config: BotConfig, client: C, engine: TransformEngine, pages: Vec<String>) -> Self {
         let start_time = Utc::now();
         Self {
             config,
@@ -115,7 +110,8 @@ impl<C: MediaWikiClient> BotRunner<C> {
             // Check for interrupt
             if shutdown_flag.load(Ordering::SeqCst) {
                 tracing::info!("Graceful shutdown initiated");
-                self.report.finalize(false, Some("Interrupted by user".to_string()));
+                self.report
+                    .finalize(false, Some("Interrupted by user".to_string()));
                 return Err(BotError::Interrupted);
             }
 
@@ -128,7 +124,8 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         PageAction::Skipped => (false, true, false),
                         PageAction::Errored => (false, false, true),
                     };
-                    self.checkpoint.record_page(page_title.clone(), edited, skipped, errored);
+                    self.checkpoint
+                        .record_page(page_title.clone(), edited, skipped, errored);
                 }
                 Err(e) => {
                     tracing::error!("Error processing page {}: {}", page_title, e);
@@ -141,7 +138,8 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         timestamp: Utc::now(),
                     };
                     self.report.record_page(result);
-                    self.checkpoint.record_page(page_title.clone(), false, false, true);
+                    self.checkpoint
+                        .record_page(page_title.clone(), false, false, true);
                 }
             }
 
@@ -159,7 +157,8 @@ impl<C: MediaWikiClient> BotRunner<C> {
         }
 
         tracing::info!("Bot run completed successfully");
-        self.report.finalize(true, Some("All pages processed".to_string()));
+        self.report
+            .finalize(true, Some("All pages processed".to_string()));
         self.emit_telemetry(TelemetryEvent::session_completed(
             self.report.pages_processed,
             self.report.pages_edited,
@@ -180,7 +179,9 @@ impl<C: MediaWikiClient> BotRunner<C> {
         let title = Title::new(awb_domain::types::Namespace::MAIN, page_title);
 
         // Fetch page content
-        let page = self.client.get_page(&title)
+        let page = self
+            .client
+            .get_page(&title)
             .await
             .map_err(|e| BotError::ApiError(e.to_string()))?;
 
@@ -203,9 +204,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
         }
 
         // Check for warnings
-        let warnings: Vec<String> = plan.warnings.iter()
-            .map(|w| format!("{:?}", w))
-            .collect();
+        let warnings: Vec<String> = plan.warnings.iter().map(|w| format!("{:?}", w)).collect();
 
         if !warnings.is_empty() && self.config.skip_on_warning {
             tracing::debug!("Skipping page {} (warnings present)", page_title);
@@ -240,7 +239,9 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 section: None,
             };
 
-            let response = self.client.edit_page(&edit_request)
+            let response = self
+                .client
+                .edit_page(&edit_request)
                 .await
                 .map_err(|e| BotError::ApiError(e.to_string()))?;
 
@@ -267,7 +268,10 @@ impl<C: MediaWikiClient> BotRunner<C> {
             Ok(PageResult {
                 title: page_title.to_string(),
                 action: PageAction::Skipped,
-                diff_summary: Some(format!("Dry-run: {} rules would apply", plan.rules_applied.len())),
+                diff_summary: Some(format!(
+                    "Dry-run: {} rules would apply",
+                    plan.rules_applied.len()
+                )),
                 warnings,
                 error: None,
                 timestamp: Utc::now(),
@@ -322,13 +326,15 @@ impl<C: MediaWikiClient> BotRunner<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use awb_domain::types::{PageContent, PageId, RevisionId, Namespace, ProtectionInfo, PageProperties};
+    use async_trait::async_trait;
     use awb_domain::rules::RuleSet;
+    use awb_domain::types::{
+        Namespace, PageContent, PageId, PageProperties, ProtectionInfo, RevisionId,
+    };
     use awb_engine::general_fixes::FixRegistry;
     use awb_mw_api::client::EditResponse;
-    use awb_mw_api::oauth::{OAuth1Config, OAuthSession};
     use awb_mw_api::error::MwApiError;
-    use async_trait::async_trait;
+    use awb_mw_api::oauth::{OAuth1Config, OAuthSession};
     use std::collections::HashSet;
 
     // Mock MediaWiki client for testing
@@ -361,7 +367,11 @@ mod tests {
 
     #[async_trait]
     impl MediaWikiClient for MockClient {
-        async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+        async fn login_bot_password(
+            &self,
+            _username: &str,
+            _password: &str,
+        ) -> Result<(), MwApiError> {
             Ok(())
         }
 
@@ -378,7 +388,8 @@ mod tests {
         }
 
         async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
-            self.pages.get(&title.display)
+            self.pages
+                .get(&title.display)
                 .cloned()
                 .ok_or_else(|| MwApiError::ApiError {
                     code: "notfound".to_string(),
@@ -394,7 +405,11 @@ mod tests {
             })
         }
 
-        async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+        async fn parse_wikitext(
+            &self,
+            _wikitext: &str,
+            _title: &Title,
+        ) -> Result<String, MwApiError> {
             Ok("<html>parsed</html>".to_string())
         }
     }

@@ -267,22 +267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "awb_gtk"
-version = "0.1.0"
-dependencies = [
- "awb_domain",
- "awb_engine",
- "awb_mw_api",
- "awb_security",
- "awb_storage",
- "awb_telemetry",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "awb_mw_api"
 version = "0.1.0"
 dependencies = [

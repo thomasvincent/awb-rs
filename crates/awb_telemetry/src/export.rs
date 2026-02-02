@@ -1,9 +1,17 @@
 use crate::events::TelemetryEvent;
 use std::io::Write;
 
-pub enum ExportFormat { Csv, PlainText, Json }
+pub enum ExportFormat {
+    Csv,
+    PlainText,
+    Json,
+}
 
-pub fn export_log(events: &[TelemetryEvent], format: ExportFormat, writer: &mut dyn Write) -> Result<(), std::io::Error> {
+pub fn export_log(
+    events: &[TelemetryEvent],
+    format: ExportFormat,
+    writer: &mut dyn Write,
+) -> Result<(), std::io::Error> {
     match format {
         ExportFormat::Json => {
             for event in events {

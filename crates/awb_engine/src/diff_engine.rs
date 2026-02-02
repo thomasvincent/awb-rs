@@ -58,7 +58,9 @@ pub fn to_unified(ops: &[DiffOp], _context_lines: usize) -> String {
                     output.push_str(&format!("+{}\n", line));
                 }
             }
-            DiffOp::Replace { old_text, new_text, .. } => {
+            DiffOp::Replace {
+                old_text, new_text, ..
+            } => {
                 for line in old_text.lines() {
                     output.push_str(&format!("-{}\n", line));
                 }
@@ -81,8 +83,18 @@ pub fn to_side_by_side(ops: &[DiffOp]) -> Vec<SideBySideLine> {
             DiffOp::Equal { text, .. } => {
                 for line_text in text.lines() {
                     lines.push(SideBySideLine {
-                        left: Some(DiffLine { line_no: left_no, text: line_text.to_string(), change_type: ChangeType::Equal, inline_changes: vec![] }),
-                        right: Some(DiffLine { line_no: right_no, text: line_text.to_string(), change_type: ChangeType::Equal, inline_changes: vec![] }),
+                        left: Some(DiffLine {
+                            line_no: left_no,
+                            text: line_text.to_string(),
+                            change_type: ChangeType::Equal,
+                            inline_changes: vec![],
+                        }),
+                        right: Some(DiffLine {
+                            line_no: right_no,
+                            text: line_text.to_string(),
+                            change_type: ChangeType::Equal,
+                            inline_changes: vec![],
+                        }),
                     });
                     left_no += 1;
                     right_no += 1;
@@ -91,7 +103,12 @@ pub fn to_side_by_side(ops: &[DiffOp]) -> Vec<SideBySideLine> {
             DiffOp::Delete { text, .. } => {
                 for line_text in text.lines() {
                     lines.push(SideBySideLine {
-                        left: Some(DiffLine { line_no: left_no, text: line_text.to_string(), change_type: ChangeType::Removed, inline_changes: vec![] }),
+                        left: Some(DiffLine {
+                            line_no: left_no,
+                            text: line_text.to_string(),
+                            change_type: ChangeType::Removed,
+                            inline_changes: vec![],
+                        }),
                         right: None,
                     });
                     left_no += 1;
@@ -101,24 +118,41 @@ pub fn to_side_by_side(ops: &[DiffOp]) -> Vec<SideBySideLine> {
                 for line_text in text.lines() {
                     lines.push(SideBySideLine {
                         left: None,
-                        right: Some(DiffLine { line_no: right_no, text: line_text.to_string(), change_type: ChangeType::Added, inline_changes: vec![] }),
+                        right: Some(DiffLine {
+                            line_no: right_no,
+                            text: line_text.to_string(),
+                            change_type: ChangeType::Added,
+                            inline_changes: vec![],
+                        }),
                     });
                     right_no += 1;
                 }
             }
-            DiffOp::Replace { old_text, new_text, .. } => {
+            DiffOp::Replace {
+                old_text, new_text, ..
+            } => {
                 let old_lines: Vec<&str> = old_text.lines().collect();
                 let new_lines: Vec<&str> = new_text.lines().collect();
                 let max = old_lines.len().max(new_lines.len());
                 for i in 0..max {
                     lines.push(SideBySideLine {
                         left: old_lines.get(i).map(|t| {
-                            let l = DiffLine { line_no: left_no, text: t.to_string(), change_type: ChangeType::Modified, inline_changes: vec![] };
+                            let l = DiffLine {
+                                line_no: left_no,
+                                text: t.to_string(),
+                                change_type: ChangeType::Modified,
+                                inline_changes: vec![],
+                            };
                             left_no += 1;
                             l
                         }),
                         right: new_lines.get(i).map(|t| {
-                            let l = DiffLine { line_no: right_no, text: t.to_string(), change_type: ChangeType::Modified, inline_changes: vec![] };
+                            let l = DiffLine {
+                                line_no: right_no,
+                                text: t.to_string(),
+                                change_type: ChangeType::Modified,
+                                inline_changes: vec![],
+                            };
                             right_no += 1;
                             l
                         }),
@@ -142,10 +176,13 @@ mod tests {
 
         // All ops should be Equal when texts are identical
         assert!(ops.iter().all(|op| matches!(op, DiffOp::Equal { .. })));
-        let combined: String = ops.iter().map(|op| match op {
-            DiffOp::Equal { text, .. } => text.as_str(),
-            _ => "",
-        }).collect();
+        let combined: String = ops
+            .iter()
+            .map(|op| match op {
+                DiffOp::Equal { text, .. } => text.as_str(),
+                _ => "",
+            })
+            .collect();
         assert_eq!(combined, old);
     }
 
@@ -257,34 +294,41 @@ mod tests {
 
         // Check deleted line has only left
         let deleted_line = lines.iter().find(|l| {
-            l.left.as_ref().map(|left| left.change_type == ChangeType::Removed).unwrap_or(false)
+            l.left
+                .as_ref()
+                .map(|left| left.change_type == ChangeType::Removed)
+                .unwrap_or(false)
         });
         assert!(deleted_line.is_some());
 
         // Check added line has only right
         let added_line = lines.iter().find(|l| {
-            l.right.as_ref().map(|right| right.change_type == ChangeType::Added).unwrap_or(false)
+            l.right
+                .as_ref()
+                .map(|right| right.change_type == ChangeType::Added)
+                .unwrap_or(false)
         });
         assert!(added_line.is_some());
     }
 
     #[test]
     fn test_to_side_by_side_replace() {
-        let ops = vec![
-            DiffOp::Replace {
-                old_range: 0..10,
-                new_range: 0..15,
-                old_text: "old1\nold2\n".to_string(),
-                new_text: "new1\nnew2\nnew3\n".to_string(),
-            },
-        ];
+        let ops = vec![DiffOp::Replace {
+            old_range: 0..10,
+            new_range: 0..15,
+            old_text: "old1\nold2\n".to_string(),
+            new_text: "new1\nnew2\nnew3\n".to_string(),
+        }];
 
         let lines = to_side_by_side(&ops);
         assert!(lines.len() >= 3);
 
         // Should have modified lines
         let has_modified = lines.iter().any(|l| {
-            l.left.as_ref().map(|left| left.change_type == ChangeType::Modified).unwrap_or(false)
+            l.left
+                .as_ref()
+                .map(|left| left.change_type == ChangeType::Modified)
+                .unwrap_or(false)
         });
         assert!(has_modified);
     }
@@ -297,7 +341,11 @@ mod tests {
 
         for op in ops {
             match op {
-                DiffOp::Equal { old_range, new_range, .. } => {
+                DiffOp::Equal {
+                    old_range,
+                    new_range,
+                    ..
+                } => {
                     assert!(old_range.start <= old_range.end);
                     assert!(new_range.start <= new_range.end);
                 }
@@ -307,7 +355,11 @@ mod tests {
                 DiffOp::Insert { new_range, .. } => {
                     assert!(new_range.start <= new_range.end);
                 }
-                DiffOp::Replace { old_range, new_range, .. } => {
+                DiffOp::Replace {
+                    old_range,
+                    new_range,
+                    ..
+                } => {
                     assert!(old_range.start <= old_range.end);
                     assert!(new_range.start <= new_range.end);
                 }
