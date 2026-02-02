@@ -77,10 +77,14 @@ impl LuaPlugin {
         for module in &[
             "os", "io", "debug", "package", "dofile", "loadfile", "require",
             "load", "loadstring", "collectgarbage", "rawget", "rawset",
-            "rawequal", "rawlen", "getmetatable", "setmetatable"
+            "rawequal", "rawlen", "getmetatable", "setmetatable", "coroutine"
         ] {
             globals.set(*module, Value::Nil)?;
         }
+
+        // Remove string.dump specifically
+        let string_table: mlua::Table = globals.get("string")?;
+        string_table.set("dump", Value::Nil)?;
 
         debug!("Applied Lua sandbox: removed dangerous modules and functions");
         Ok(())

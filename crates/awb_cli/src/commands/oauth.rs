@@ -1,14 +1,12 @@
 use anyhow::{Context, Result};
-use dialoguer::Input;
+use dialoguer::{Input, Password};
 use url::Url;
 use awb_security::{CredentialPort, KeyringCredentialStore};
 
 pub async fn setup(
     wiki: Url,
     consumer_key: String,
-    consumer_secret: String,
     access_token: String,
-    access_secret: String,
     profile: String,
 ) -> Result<()> {
     use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};
@@ -19,6 +17,17 @@ pub async fn setup(
     }
 
     println!("Setting up OAuth 1.0a for {}", wiki);
+
+    // Prompt for secrets interactively (never via CLI args)
+    let consumer_secret = Password::new()
+        .with_prompt("OAuth consumer secret")
+        .interact()
+        .context("Failed to read consumer secret")?;
+
+    let access_secret = Password::new()
+        .with_prompt("OAuth access secret")
+        .interact()
+        .context("Failed to read access secret")?;
 
     // Create profile with OAuth1 auth
     let auth_method = AuthMethod::OAuth1 {
@@ -66,7 +75,6 @@ pub async fn setup(
 pub async fn authorize(
     wiki: Url,
     client_id: String,
-    client_secret: String,
     profile: String,
 ) -> Result<()> {
     use awb_mw_api::oauth::{OAuth2Config, oauth2_authorization_url, oauth2_exchange_code};
@@ -77,6 +85,12 @@ pub async fn authorize(
     }
 
     println!("Starting OAuth 2.0 authorization flow for {}", wiki);
+
+    // Prompt for client secret interactively (never via CLI args)
+    let client_secret = Password::new()
+        .with_prompt("OAuth 2.0 client secret")
+        .interact()
+        .context("Failed to read client secret")?;
 
     // Build OAuth2 config
     // Note: These endpoints are MediaWiki-specific and may need to be customized
@@ -92,8 +106,8 @@ pub async fn authorize(
         auth_endpoint,
     };
 
-    // Generate authorization URL
-    let (auth_url, state) = oauth2_authorization_url(&config)
+    // Generate authorization URL with PKCE
+    let (auth_url, state, pkce_verifier) = oauth2_authorization_url(&config)
         .await
         .context("Failed to generate authorization URL")?;
 
@@ -112,9 +126,9 @@ pub async fn authorize(
         .interact_text()
         .context("Failed to read state")?;
 
-    // Exchange code for token
+    // Exchange code for token with PKCE verifier
     println!("Exchanging authorization code for access token...");
-    let token = oauth2_exchange_code(&config, &code, &state, &received_state)
+    let token = oauth2_exchange_code(&config, &code, &state, &received_state, &pkce_verifier)
         .await
         .context("Failed to exchange authorization code")?;
 

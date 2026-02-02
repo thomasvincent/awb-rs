@@ -21,12 +21,31 @@ impl JsonSessionStore {
         Self { dir: dir.into() }
     }
 
-    fn session_path(&self, id: &str) -> PathBuf {
-        self.dir.join(format!("{}.json", id))
+    /// Validate session ID to prevent path traversal attacks
+    fn validate_session_id(id: &str) -> Result<(), StorageError> {
+        // Only allow alphanumeric, hyphens, underscores, and periods
+        if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+            return Err(StorageError::InvalidSessionId(
+                format!("Session ID '{}' contains invalid characters. Only alphanumeric, hyphens, underscores, and periods are allowed.", id)
+            ));
+        }
+        // Prevent empty or hidden files
+        if id.is_empty() || id.starts_with('.') {
+            return Err(StorageError::InvalidSessionId(
+                format!("Session ID '{}' is invalid (empty or starts with '.')", id)
+            ));
+        }
+        Ok(())
     }
 
-    fn temp_path(&self, id: &str) -> PathBuf {
-        self.dir.join(format!("{}.json.tmp", id))
+    fn session_path(&self, id: &str) -> Result<PathBuf, StorageError> {
+        Self::validate_session_id(id)?;
+        Ok(self.dir.join(format!("{}.json", id)))
+    }
+
+    fn temp_path(&self, id: &str) -> Result<PathBuf, StorageError> {
+        Self::validate_session_id(id)?;
+        Ok(self.dir.join(format!("{}.json.tmp", id)))
     }
 }
 
@@ -36,8 +55,8 @@ impl SessionStore for JsonSessionStore {
         tokio::fs::create_dir_all(&self.dir).await?;
         let json = serde_json::to_string_pretty(session)
             .map_err(|e| StorageError::Serialize(e.to_string()))?;
-        let temp = self.temp_path(&session.session_id);
-        let final_path = self.session_path(&session.session_id);
+        let temp = self.temp_path(&session.session_id)?;
+        let final_path = self.session_path(&session.session_id)?;
         // Crash-safe: write to temp, then atomic rename
         tokio::fs::write(&temp, &json).await?;
         tokio::fs::rename(&temp, &final_path).await?;
@@ -45,10 +64,10 @@ impl SessionStore for JsonSessionStore {
     }
 
     async fn load(&self, id: &str) -> Result<SessionState, StorageError> {
-        let path = self.session_path(id);
+        let path = self.session_path(id)?;
         if !path.exists() {
             // Try recovering from temp file
-            let temp = self.temp_path(id);
+            let temp = self.temp_path(id)?;
             if temp.exists() {
                 tokio::fs::rename(&temp, &path).await?;
             } else {
@@ -79,11 +98,11 @@ impl SessionStore for JsonSessionStore {
     }
 
     async fn delete(&self, id: &str) -> Result<(), StorageError> {
-        let path = self.session_path(id);
+        let path = self.session_path(id)?;
         if path.exists() {
             tokio::fs::remove_file(&path).await?;
         }
-        let temp = self.temp_path(id);
+        let temp = self.temp_path(id)?;
         if temp.exists() {
             tokio::fs::remove_file(&temp).await?;
         }

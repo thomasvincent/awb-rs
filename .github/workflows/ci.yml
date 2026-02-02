@@ -33,3 +33,8 @@ jobs:
 
       - name: Format
         run: cargo fmt --all -- --check
+
+      - name: Security Audit
+        run: |
+          cargo install cargo-audit
+          cargo audit

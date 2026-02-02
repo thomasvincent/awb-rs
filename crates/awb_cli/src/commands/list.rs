@@ -40,7 +40,10 @@ pub async fn run(wiki: Url, source: ListSource, query: String, limit: usize) -> 
 }
 
 async fn fetch_category_members(api_url: &Url, category: &str, limit: usize) -> Result<Vec<Title>> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("AWB-RS/0.1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
     let category_title = if category.starts_with("Category:") {
         category.to_string()
     } else {
@@ -70,7 +73,10 @@ async fn fetch_category_members(api_url: &Url, category: &str, limit: usize) -> 
 }
 
 async fn fetch_what_links_here(api_url: &Url, page: &str, limit: usize) -> Result<Vec<Title>> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("AWB-RS/0.1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
     let base_params = [
         ("action", "query"),
         ("list", "backlinks"),
@@ -94,7 +100,10 @@ async fn fetch_what_links_here(api_url: &Url, page: &str, limit: usize) -> Resul
 }
 
 async fn fetch_search_results(api_url: &Url, search_query: &str, limit: usize) -> Result<Vec<Title>> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("AWB-RS/0.1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
     let base_params = [
         ("action", "query"),
         ("list", "search"),
@@ -118,6 +127,21 @@ async fn fetch_search_results(api_url: &Url, search_query: &str, limit: usize) -
 }
 
 async fn fetch_from_file(file_path: &str) -> Result<Vec<Title>> {
+    // Verify file exists and is a regular file (not a symlink)
+    let metadata = tokio::fs::metadata(file_path)
+        .await
+        .context("Failed to access file")?;
+
+    if !metadata.is_file() {
+        anyhow::bail!("Path is not a regular file");
+    }
+
+    // Check file size (reject files >10MB)
+    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
+    if metadata.len() > MAX_FILE_SIZE {
+        anyhow::bail!("File too large (max 10MB)");
+    }
+
     let content = tokio::fs::read_to_string(file_path)
         .await
         .context("Failed to read file")?;

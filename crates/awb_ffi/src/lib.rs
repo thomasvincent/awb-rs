@@ -66,6 +66,11 @@ lazy_static::lazy_static! {
 
 // UniFFI exported functions
 pub fn create_session(wiki_url: String, username: String, password: String) -> Result<SessionHandle, FfiError> {
+    // Validate that wiki_url is not empty
+    if wiki_url.trim().is_empty() {
+        return Err(FfiError::ParseError("wiki_url cannot be empty".to_string()));
+    }
+
     let mut sessions = SESSIONS.lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
     let mut next_id = NEXT_SESSION_ID.lock()
@@ -362,8 +367,12 @@ mod tests {
             "pass".to_string(),
         );
 
-        // Empty URL should still create session (validation happens at login)
-        assert!(result.is_ok());
+        // Empty URL should now be rejected
+        assert!(result.is_err());
+        match result {
+            Err(FfiError::ParseError(msg)) => assert!(msg.contains("wiki_url")),
+            _ => panic!("Expected ParseError for empty wiki_url"),
+        }
     }
 
     #[test]
@@ -398,7 +407,12 @@ mod tests {
             "".to_string(),
         );
 
-        assert!(result.is_ok(), "Should accept empty strings");
+        // Empty wiki_url should be rejected
+        assert!(result.is_err(), "Should reject empty wiki_url");
+        match result {
+            Err(FfiError::ParseError(msg)) => assert!(msg.contains("wiki_url")),
+            _ => panic!("Expected ParseError for empty wiki_url"),
+        }
     }
 
     #[test]

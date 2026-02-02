@@ -37,6 +37,8 @@ impl SandboxConfig {
     }
 
     /// Create a configuration with no instruction limits (use with caution)
+    /// WARNING: Disables all sandbox limits. For testing only.
+    #[cfg(test)]
     pub fn unlimited() -> Self {
         Self {
             instruction_limit: None,

@@ -139,17 +139,9 @@ enum OAuthCommands {
         #[arg(long)]
         consumer_key: String,
 
-        /// OAuth consumer secret
-        #[arg(long)]
-        consumer_secret: String,
-
         /// OAuth access token
         #[arg(long)]
         access_token: String,
-
-        /// OAuth access secret
-        #[arg(long)]
-        access_secret: String,
 
         /// Profile ID to save credentials under
         #[arg(long, default_value = "default")]
@@ -165,10 +157,6 @@ enum OAuthCommands {
         /// OAuth 2.0 client ID
         #[arg(long)]
         client_id: String,
-
-        /// OAuth 2.0 client secret
-        #[arg(long)]
-        client_secret: String,
 
         /// Profile ID to save credentials under
         #[arg(long, default_value = "default")]
@@ -221,11 +209,11 @@ async fn main() -> Result<()> {
         }
         Commands::OAuth(oauth_cmd) => {
             match oauth_cmd {
-                OAuthCommands::Setup { wiki, consumer_key, consumer_secret, access_token, access_secret, profile } => {
-                    commands::oauth::setup(wiki, consumer_key, consumer_secret, access_token, access_secret, profile).await
+                OAuthCommands::Setup { wiki, consumer_key, access_token, profile } => {
+                    commands::oauth::setup(wiki, consumer_key, access_token, profile).await
                 }
-                OAuthCommands::Authorize { wiki, client_id, client_secret, profile } => {
-                    commands::oauth::authorize(wiki, client_id, client_secret, profile).await
+                OAuthCommands::Authorize { wiki, client_id, profile } => {
+                    commands::oauth::authorize(wiki, client_id, profile).await
                 }
             }
         }

@@ -117,14 +117,27 @@ impl FileCredentialStore {
     /// Save credentials to file with proper permissions
     fn save(&self, credentials: &std::collections::HashMap<String, String>) -> Result<(), CredentialError> {
         let json = serde_json::to_string_pretty(credentials)?;
-        std::fs::write(&self.credentials_path, json)?;
 
-        // Set file permissions to 0600 on Unix
+        // Atomically create file with secure permissions on Unix
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(&self.credentials_path, perms)?;
+            use std::os::unix::fs::OpenOptionsExt;
+            use std::io::Write;
+
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.credentials_path)?;
+
+            file.write_all(json.as_bytes())?;
+        }
+
+        // On non-Unix, write then set permissions
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&self.credentials_path, json)?;
         }
 
         Ok(())
