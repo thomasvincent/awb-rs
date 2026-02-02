@@ -103,7 +103,6 @@ pub enum SkipDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
 
     #[test]
     fn test_session_state_new() {

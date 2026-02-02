@@ -50,6 +50,9 @@ pub async fn run(
         AuthMethod::OAuth2 { .. } => {
             anyhow::bail!("OAuth2 not yet implemented");
         }
+        AuthMethod::OAuth1 { .. } => {
+            anyhow::bail!("OAuth1 not yet implemented");
+        }
     };
 
     client.login_bot_password(&username, &password)

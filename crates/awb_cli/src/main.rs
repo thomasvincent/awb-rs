@@ -82,6 +82,98 @@ enum Commands {
         #[arg(long)]
         output: PathBuf,
     },
+
+    /// Run bot mode (unattended batch editing)
+    Bot {
+        /// Wiki API URL
+        #[arg(long)]
+        wiki: Url,
+
+        /// Profile file path (TOML)
+        #[arg(long)]
+        profile: PathBuf,
+
+        /// Maximum number of edits (default: unlimited)
+        #[arg(long)]
+        max_edits: Option<u32>,
+
+        /// Dry-run mode (show diffs without saving)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Checkpoint file path for resume capability
+        #[arg(long)]
+        checkpoint: Option<PathBuf>,
+
+        /// Profile ID for credentials
+        #[arg(long, default_value = "default")]
+        auth_profile: String,
+
+        /// Skip pages with no changes
+        #[arg(long, default_value = "true")]
+        skip_no_change: bool,
+
+        /// Skip pages with warnings
+        #[arg(long)]
+        skip_on_warning: bool,
+
+        /// Log progress every N pages
+        #[arg(long, default_value = "10")]
+        log_every_n: u32,
+    },
+
+    /// OAuth authentication management
+    #[command(subcommand)]
+    OAuth(OAuthCommands),
+}
+
+#[derive(Subcommand)]
+enum OAuthCommands {
+    /// Setup OAuth 1.0a credentials
+    Setup {
+        /// Wiki API URL
+        #[arg(long)]
+        wiki: Url,
+
+        /// OAuth consumer key
+        #[arg(long)]
+        consumer_key: String,
+
+        /// OAuth consumer secret
+        #[arg(long)]
+        consumer_secret: String,
+
+        /// OAuth access token
+        #[arg(long)]
+        access_token: String,
+
+        /// OAuth access secret
+        #[arg(long)]
+        access_secret: String,
+
+        /// Profile ID to save credentials under
+        #[arg(long, default_value = "default")]
+        profile: String,
+    },
+
+    /// Authorize OAuth 2.0 (opens browser)
+    Authorize {
+        /// Wiki API URL
+        #[arg(long)]
+        wiki: Url,
+
+        /// OAuth 2.0 client ID
+        #[arg(long)]
+        client_id: String,
+
+        /// OAuth 2.0 client secret
+        #[arg(long)]
+        client_secret: String,
+
+        /// Profile ID to save credentials under
+        #[arg(long, default_value = "default")]
+        profile: String,
+    },
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -123,6 +215,19 @@ async fn main() -> Result<()> {
         }
         Commands::ExportLog { format, output } => {
             commands::export::run(format, output).await
+        }
+        Commands::Bot { wiki, profile, max_edits, dry_run, checkpoint, auth_profile, skip_no_change, skip_on_warning, log_every_n } => {
+            commands::bot::run(wiki, profile, max_edits, dry_run, checkpoint, auth_profile, skip_no_change, skip_on_warning, log_every_n).await
+        }
+        Commands::OAuth(oauth_cmd) => {
+            match oauth_cmd {
+                OAuthCommands::Setup { wiki, consumer_key, consumer_secret, access_token, access_secret, profile } => {
+                    commands::oauth::setup(wiki, consumer_key, consumer_secret, access_token, access_secret, profile).await
+                }
+                OAuthCommands::Authorize { wiki, client_id, client_secret, profile } => {
+                    commands::oauth::authorize(wiki, client_id, client_secret, profile).await
+                }
+            }
         }
     }
 }
