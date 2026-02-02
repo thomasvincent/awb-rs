@@ -18,6 +18,11 @@ url = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+oauth2 = { workspace = true }
+hmac = { workspace = true }
+sha1 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

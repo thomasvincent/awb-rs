@@ -15,6 +15,19 @@ pub trait CredentialPort: Send + Sync {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError>;
     fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError>;
     fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError>;
+
+    /// Store OAuth tokens (stored as JSON)
+    fn get_oauth_token(&self, profile_id: &str) -> Result<String, CredentialError> {
+        self.get_password(&format!("{}_oauth_token", profile_id))
+    }
+
+    fn set_oauth_token(&self, profile_id: &str, token_json: &str) -> Result<(), CredentialError> {
+        self.set_password(&format!("{}_oauth_token", profile_id), token_json)
+    }
+
+    fn delete_oauth_token(&self, profile_id: &str) -> Result<(), CredentialError> {
+        self.delete_password(&format!("{}_oauth_token", profile_id))
+    }
 }
 
 /// In-memory credential store for testing.

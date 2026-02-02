@@ -7,8 +7,10 @@ members = [
     "crates/awb_storage",
     "crates/awb_security",
     "crates/awb_telemetry",
+    "crates/awb_bot",
     "crates/awb_ffi",
     "crates/awb_cli",
+    "crates/awb_plugins",
     "ui/linux/awb_gtk",
 ]
 
@@ -36,12 +38,26 @@ futures = "0.3"
 # HTTP
 reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"], default-features = false }
 
+# OAuth
+oauth2 = { version = "4", features = ["reqwest"] }
+hmac = "0.12"
+sha1 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+
 # Regex
 regex = "1"
 fancy-regex = "0.14"
 
 # Diff
 similar = { version = "2", features = ["unicode"] }
+
+# Plugins
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }
+wasmtime = "27"
+
+# FFI
+uniffi = { version = "0.28", features = ["cli"] }
 
 # Storage
 toml = "0.8"

@@ -16,7 +16,13 @@ pub struct Profile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuthMethod {
     BotPassword { username: String },
-    OAuth2 { client_id: String },
+    OAuth1 {
+        consumer_key: String,
+        consumer_secret: String,
+        access_token: String,
+        access_secret: String,
+    },
+    OAuth2 { client_id: String, client_secret: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,10 +107,14 @@ mod tests {
     fn test_auth_method_oauth2() {
         let auth = AuthMethod::OAuth2 {
             client_id: "client123".to_string(),
+            client_secret: "secret456".to_string(),
         };
 
         match auth {
-            AuthMethod::OAuth2 { client_id } => assert_eq!(client_id, "client123"),
+            AuthMethod::OAuth2 { client_id, client_secret } => {
+                assert_eq!(client_id, "client123");
+                assert_eq!(client_secret, "secret456");
+            }
             _ => panic!("Expected OAuth2 auth method"),
         }
     }
@@ -138,7 +148,7 @@ mod tests {
     #[test]
     fn test_duration_roundtrip() {
         let original = Duration::from_secs_f64(12.5);
-        let serialized = serde_json::to_value(&original).unwrap();
+        let _serialized = serde_json::to_value(&original).unwrap();
 
         // Manual serialization test
         #[derive(serde::Serialize, serde::Deserialize)]

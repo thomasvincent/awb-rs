@@ -2,7 +2,7 @@
 name = "awb_ffi"
 description = "FFI boundary for AWB-RS (C ABI + UniFFI)"
 version.workspace = true
-edition.workspace = true
+edition = "2021"
 license.workspace = true
 rust-version.workspace = true
 
@@ -19,3 +19,9 @@ awb_telemetry = { path = "../awb_telemetry" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+uniffi = { workspace = true }
+lazy_static = "1.4"
+chrono = { workspace = true }
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }

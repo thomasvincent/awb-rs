@@ -1,0 +1,47 @@
+namespace awb_ffi {
+  SessionHandle create_session(string wiki_url, string username, string password);
+  [Throws=FfiError]
+  void login(SessionHandle handle);
+  [Throws=FfiError]
+  sequence<string> fetch_list(SessionHandle handle, string source, string query);
+  [Throws=FfiError]
+  PageInfo get_page(SessionHandle handle, string title);
+  [Throws=FfiError]
+  TransformResult apply_rules(SessionHandle handle, string content, string rules_json);
+  [Throws=FfiError]
+  void save_page(SessionHandle handle, string title, string content, string summary);
+  string compute_diff(string old_text, string new_text);
+};
+
+dictionary SessionHandle {
+  u64 id;
+};
+
+dictionary PageInfo {
+  u64 page_id;
+  string title;
+  u64 revision;
+  string timestamp;
+  string wikitext;
+  u64 size_bytes;
+  boolean is_redirect;
+};
+
+dictionary TransformResult {
+  string new_wikitext;
+  sequence<string> rules_applied;
+  sequence<string> fixes_applied;
+  string summary;
+  sequence<string> warnings;
+  string diff_html;
+};
+
+[Error]
+enum FfiError {
+  "NetworkError",
+  "AuthenticationError",
+  "NotFound",
+  "PermissionDenied",
+  "ParseError",
+  "InternalError",
+};
