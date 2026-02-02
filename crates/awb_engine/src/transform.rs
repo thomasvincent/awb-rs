@@ -121,7 +121,9 @@ impl TransformEngine {
                         // Use pre-compiled case-insensitive regex
                         case_insensitive_regex
                             .as_ref()
-                            .expect("case_insensitive_regex must be Some when case_sensitive is false")
+                            .expect(
+                                "case_insensitive_regex must be Some when case_sensitive is false",
+                            )
                             .replace_all(&text, replace.as_str())
                             .into_owned()
                     };
@@ -186,9 +188,9 @@ impl TransformEngine {
 
         // Build summary
         let summary = if summaries.is_empty() {
-            "AWB-RS automated edit".to_string()
+            "AWB-RS ([[WP:AWB]]) automated edit".to_string()
         } else {
-            format!("AWB-RS: {}", summaries.join(", "))
+            format!("AWB-RS ([[WP:AWB]]): {}", summaries.join(", "))
         };
 
         EditPlan {

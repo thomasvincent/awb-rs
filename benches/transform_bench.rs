@@ -26,13 +26,13 @@ fn bench_plain_rules(c: &mut Criterion) {
     // Test with 10 rules
     let mut ruleset_10 = RuleSet::new();
     for i in 0..10 {
-        ruleset_10.add(Rule::new_plain(&format!("pattern{}", i), &format!("replacement{}", i), false));
+        ruleset_10.add(Rule::new_plain(format!("pattern{}", i), format!("replacement{}", i), false));
     }
 
     // Test with 50 rules
     let mut ruleset_50 = RuleSet::new();
     for i in 0..50 {
-        ruleset_50.add(Rule::new_plain(&format!("pattern{}", i), &format!("replacement{}", i), false));
+        ruleset_50.add(Rule::new_plain(format!("pattern{}", i), format!("replacement{}", i), false));
     }
 
     let sample_text = "This is a test page with pattern0 and pattern5 and pattern10 repeated multiple times.\n\
@@ -125,7 +125,7 @@ fn bench_case_insensitive_rules(c: &mut Criterion) {
 
     let mut ruleset = RuleSet::new();
     for i in 0..20 {
-        ruleset.add(Rule::new_plain(&format!("WORD{}", i), &format!("replacement{}", i), false));
+        ruleset.add(Rule::new_plain(format!("WORD{}", i), format!("replacement{}", i), false));
     }
 
     let sample_text = "This text has WORD0 and word1 and WoRd2 in various cases.\n\

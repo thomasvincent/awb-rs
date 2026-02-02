@@ -46,8 +46,12 @@ pub enum FfiError {
     PermissionDenied,
     #[error("Parse error: {0}")]
     ParseError(String),
-    #[error("Internal error: {0}")]
-    InternalError(String),
+    #[error("Session not found")]
+    SessionNotFound,
+    #[error("Lock poisoned")]
+    LockPoisoned,
+    #[error("Engine error: {0}")]
+    EngineError(String),
 }
 
 // Session storage
@@ -77,13 +81,13 @@ pub fn create_session(
 
     let mut sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
     let mut next_id = NEXT_SESSION_ID
         .lock()
-        .map_err(|_| FfiError::InternalError("Session ID lock poisoned".to_string()))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
 
     let id = *next_id;
-    *next_id += 1;
+    *next_id = next_id.checked_add(1).ok_or(FfiError::EngineError("session ID overflow".into()))?;
 
     sessions.insert(
         id,
@@ -97,13 +101,17 @@ pub fn create_session(
     Ok(SessionHandle { id })
 }
 
+pub fn destroy_session(handle: SessionHandle) -> Result<(), FfiError> {
+    let mut sessions = SESSIONS.lock().map_err(|_| FfiError::LockPoisoned)?;
+    sessions.remove(&handle.id).ok_or(FfiError::SessionNotFound)?;
+    Ok(())
+}
+
 pub fn login(handle: SessionHandle) -> Result<(), FfiError> {
     let mut sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let session = sessions.get_mut(&handle.id).ok_or(FfiError::InternalError(
-        "Invalid session handle".to_string(),
-    ))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
+    let session = sessions.get_mut(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual authentication via awb_mw_api
     // Use password here: let _password = session.password.as_ref().map(|p| p.expose_secret());
@@ -121,10 +129,8 @@ pub fn fetch_list(
 ) -> Result<Vec<String>, FfiError> {
     let sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
-        "Invalid session handle".to_string(),
-    ))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual list fetching via awb_mw_api
     // For now, return a mock list
@@ -138,10 +144,8 @@ pub fn fetch_list(
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {
     let sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
-        "Invalid session handle".to_string(),
-    ))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual page fetching via awb_mw_api
     // For now, return a mock page
@@ -163,10 +167,8 @@ pub fn apply_rules(
 ) -> Result<TransformResult, FfiError> {
     let sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
-        "Invalid session handle".to_string(),
-    ))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // Parse rules from JSON
     let rule_set: RuleSet = serde_json::from_str(&rules_json)
@@ -189,7 +191,7 @@ pub fn apply_rules(
     let fix_registry = FixRegistry::with_defaults();
     let enabled_fixes = std::collections::HashSet::new();
     let engine = TransformEngine::new(&rule_set, fix_registry, enabled_fixes)
-        .map_err(|e| FfiError::InternalError(format!("Transform engine error: {}", e)))?;
+        .map_err(|e| FfiError::EngineError(format!("Transform engine error: {}", e)))?;
 
     let plan = engine.apply(&page);
 
@@ -214,10 +216,8 @@ pub fn save_page(
 ) -> Result<(), FfiError> {
     let sessions = SESSIONS
         .lock()
-        .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
-        "Invalid session handle".to_string(),
-    ))?;
+        .map_err(|_| FfiError::LockPoisoned)?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
     // TODO: Implement actual page saving via awb_mw_api
     // For now, just validate inputs
@@ -684,7 +684,26 @@ mod tests {
         let err5 = FfiError::ParseError("invalid".to_string());
         assert!(err5.to_string().contains("Parse error"));
 
-        let err6 = FfiError::InternalError("bug".to_string());
-        assert!(err6.to_string().contains("Internal error"));
+        let err6 = FfiError::SessionNotFound;
+        assert_eq!(err6.to_string(), "Session not found");
+
+        let err7 = FfiError::LockPoisoned;
+        assert_eq!(err7.to_string(), "Lock poisoned");
+
+        let err8 = FfiError::EngineError("transform failed".to_string());
+        assert!(err8.to_string().contains("Engine error"));
+    }
+
+    #[test]
+    fn test_destroy_session() {
+        let handle = create_session(
+            "https://en.wikipedia.org".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        ).unwrap();
+        let id = handle.id;
+        assert!(destroy_session(SessionHandle { id }).is_ok());
+        // Should fail now
+        assert!(matches!(destroy_session(SessionHandle { id }), Err(FfiError::SessionNotFound)));
     }
 }

@@ -103,7 +103,9 @@ impl ReviewStateMachine {
                 effects.push(ReviewSideEffect::ApplyRules(page));
             }
             (ReviewState::ApplyingRules { .. }, ReviewEvent::RulesApplied(plan)) => {
-                self.state = ReviewState::AwaitingDecision { plan: Box::new(plan.clone()) };
+                self.state = ReviewState::AwaitingDecision {
+                    plan: Box::new(plan.clone()),
+                };
                 effects.push(ReviewSideEffect::PresentForReview(plan));
             }
             (ReviewState::AwaitingDecision { plan }, ReviewEvent::UserDecision(decision)) => {
@@ -160,8 +162,8 @@ impl ReviewStateMachine {
                 effects.push(ReviewSideEffect::PersistSession);
                 effects.push(ReviewSideEffect::ShowComplete(self.stats.clone()));
             }
-            _ => {
-                // Invalid transition, ignore
+            (_state, _event) => {
+                tracing::warn!("Unexpected state machine transition ignored");
             }
         }
         effects

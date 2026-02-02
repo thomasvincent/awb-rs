@@ -168,3 +168,53 @@ fn test_credential_store_concurrent_access() {
         assert_eq!(retrieved, secret);
     }
 }
+
+#[test]
+fn test_canary_redaction_in_telemetry_event() {
+    // Simulate a telemetry event that accidentally contains a known secret
+    let canary_secret = "sk-super-secret-api-key-12345";
+    let telemetry_event = format!(
+        r#"{{"event":"api_call","url":"https://en.wikipedia.org/w/api.php","headers":{{"Authorization":"Bearer {}"}}, "status":200,"duration_ms":150}}"#,
+        canary_secret
+    );
+
+    // Pass through redact_secrets and verify the secret is gone
+    let redacted = redact_secrets(&telemetry_event, &[canary_secret]);
+
+    assert!(
+        !redacted.contains(canary_secret),
+        "Canary secret was NOT redacted from telemetry event: {}",
+        redacted
+    );
+    assert!(
+        redacted.contains("[REDACTED]"),
+        "Redacted marker missing from output: {}",
+        redacted
+    );
+
+    // Verify the rest of the event structure is preserved
+    assert!(redacted.contains("api_call"));
+    assert!(redacted.contains("en.wikipedia.org"));
+    assert!(redacted.contains("200"));
+}
+
+#[test]
+fn test_canary_redaction_multiple_occurrences() {
+    let secret = "oauth-token-xyz789";
+    let text = format!(
+        "request token={} response contained token={} in body",
+        secret, secret
+    );
+
+    let redacted = redact_secrets(&text, &[secret]);
+
+    assert!(
+        !redacted.contains(secret),
+        "Secret still present after redaction"
+    );
+    assert_eq!(
+        redacted.matches("[REDACTED]").count(),
+        2,
+        "Expected exactly 2 redactions"
+    );
+}

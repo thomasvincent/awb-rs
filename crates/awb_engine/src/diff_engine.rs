@@ -39,38 +39,140 @@ pub fn compute_diff(old: &str, new: &str) -> Vec<DiffOp> {
     ops
 }
 
-pub fn to_unified(ops: &[DiffOp], _context_lines: usize) -> String {
-    // Simplified unified diff output
-    let mut output = String::new();
+pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
+    if ops.is_empty() {
+        return String::new();
+    }
+
+    // Step 1: Flatten ops into tagged lines
+    #[derive(Clone, Copy)]
+    enum Tag { Context, Delete, Insert }
+
+    struct TaggedLine<'a> {
+        tag: Tag,
+        text: &'a str,
+    }
+
+    let mut tagged: Vec<TaggedLine> = Vec::new();
     for op in ops {
         match op {
             DiffOp::Equal { text, .. } => {
-                for line in text.lines() {
-                    output.push_str(&format!(" {}\n", line));
+                for line in text.split_inclusive('\n') {
+                    tagged.push(TaggedLine { tag: Tag::Context, text: line });
                 }
             }
             DiffOp::Delete { text, .. } => {
-                for line in text.lines() {
-                    output.push_str(&format!("-{}\n", line));
+                for line in text.split_inclusive('\n') {
+                    tagged.push(TaggedLine { tag: Tag::Delete, text: line });
                 }
             }
             DiffOp::Insert { text, .. } => {
-                for line in text.lines() {
-                    output.push_str(&format!("+{}\n", line));
+                for line in text.split_inclusive('\n') {
+                    tagged.push(TaggedLine { tag: Tag::Insert, text: line });
                 }
             }
             DiffOp::Replace {
                 old_text, new_text, ..
             } => {
-                for line in old_text.lines() {
-                    output.push_str(&format!("-{}\n", line));
+                for line in old_text.split_inclusive('\n') {
+                    tagged.push(TaggedLine { tag: Tag::Delete, text: line });
                 }
-                for line in new_text.lines() {
-                    output.push_str(&format!("+{}\n", line));
+                for line in new_text.split_inclusive('\n') {
+                    tagged.push(TaggedLine { tag: Tag::Insert, text: line });
                 }
             }
         }
     }
+
+    if tagged.is_empty() {
+        return String::new();
+    }
+
+    // Step 2: Find change regions
+    let is_change = |i: usize| !matches!(tagged[i].tag, Tag::Context);
+
+    let mut change_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < tagged.len() {
+        if is_change(i) {
+            let start = i;
+            while i < tagged.len() && is_change(i) {
+                i += 1;
+            }
+            change_ranges.push((start, i - 1));
+        } else {
+            i += 1;
+        }
+    }
+
+    if change_ranges.is_empty() {
+        return String::new();
+    }
+
+    // Step 3: Build hunks by expanding context and merging overlaps
+    struct Hunk {
+        start: usize,
+        end: usize,
+    }
+
+    let mut hunks: Vec<Hunk> = Vec::new();
+    for &(cs, ce) in &change_ranges {
+        let hunk_start = cs.saturating_sub(context_lines);
+        let hunk_end = (ce + context_lines).min(tagged.len() - 1);
+
+        if let Some(last) = hunks.last_mut() {
+            if hunk_start <= last.end + 1 {
+                last.end = hunk_end;
+                continue;
+            }
+        }
+        hunks.push(Hunk { start: hunk_start, end: hunk_end });
+    }
+
+    // Step 4: Emit output
+    let mut output = String::from("--- a\n+++ b\n");
+
+    for hunk in &hunks {
+        let mut old_start = 1usize;
+        let mut new_start = 1usize;
+        for tl in tagged.iter().take(hunk.start) {
+            match tl.tag {
+                Tag::Context => { old_start += 1; new_start += 1; }
+                Tag::Delete => { old_start += 1; }
+                Tag::Insert => { new_start += 1; }
+            }
+        }
+
+        let mut old_count = 0usize;
+        let mut new_count = 0usize;
+        for j in hunk.start..=hunk.end {
+            match tagged[j].tag {
+                Tag::Context => { old_count += 1; new_count += 1; }
+                Tag::Delete => { old_count += 1; }
+                Tag::Insert => { new_count += 1; }
+            }
+        }
+
+        output.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            old_start, old_count, new_start, new_count
+        ));
+
+        for j in hunk.start..=hunk.end {
+            let prefix = match tagged[j].tag {
+                Tag::Context => ' ',
+                Tag::Delete => '-',
+                Tag::Insert => '+',
+            };
+            let line_text = tagged[j].text;
+            output.push(prefix);
+            output.push_str(line_text);
+            if !line_text.ends_with('\n') {
+                output.push('\n');
+            }
+        }
+    }
+
     output
 }
 
@@ -381,5 +483,99 @@ mod tests {
         let ops = vec![];
         let lines = to_side_by_side(&ops);
         assert_eq!(lines.len(), 0);
+    }
+
+    #[test]
+    fn test_to_unified_has_headers() {
+        let ops = vec![
+            DiffOp::Equal {
+                old_range: 0..6,
+                new_range: 0..6,
+                text: "same\n".to_string(),
+            },
+            DiffOp::Delete {
+                old_range: 6..14,
+                text: "deleted\n".to_string(),
+            },
+            DiffOp::Insert {
+                new_range: 6..12,
+                text: "added\n".to_string(),
+            },
+        ];
+        let unified = to_unified(&ops, 3);
+        assert!(unified.starts_with("--- a\n+++ b\n"), "Missing unified diff headers");
+    }
+
+    #[test]
+    fn test_to_unified_has_hunk_markers() {
+        let ops = vec![
+            DiffOp::Delete {
+                old_range: 0..4,
+                text: "old\n".to_string(),
+            },
+            DiffOp::Insert {
+                new_range: 0..4,
+                text: "new\n".to_string(),
+            },
+        ];
+        let unified = to_unified(&ops, 3);
+        assert!(unified.contains("@@"), "Missing hunk marker");
+    }
+
+    #[test]
+    fn test_to_unified_context_lines() {
+        let ops = vec![
+            DiffOp::Equal {
+                old_range: 0..30,
+                new_range: 0..30,
+                text: "line1\nline2\nline3\nline4\nline5\n".to_string(),
+            },
+            DiffOp::Delete {
+                old_range: 30..40,
+                text: "removed\n".to_string(),
+            },
+            DiffOp::Equal {
+                old_range: 40..70,
+                new_range: 30..60,
+                text: "line6\nline7\nline8\nline9\nline10\n".to_string(),
+            },
+        ];
+        // With context_lines=1, should only show 1 context line before/after
+        let unified = to_unified(&ops, 1);
+        // The hunk should NOT include line1 (too far from the change)
+        let lines: Vec<&str> = unified.lines().collect();
+        // Should have --- a, +++ b, @@, then context + changes
+        assert!(lines.len() < 12, "context_lines=1 should limit output, got {} lines", lines.len());
+    }
+
+    #[test]
+    fn test_to_unified_no_changes() {
+        let ops = vec![DiffOp::Equal {
+            old_range: 0..5,
+            new_range: 0..5,
+            text: "same\n".to_string(),
+        }];
+        let unified = to_unified(&ops, 3);
+        assert_eq!(unified, "", "No changes should produce empty output");
+    }
+
+    #[test]
+    fn test_to_side_by_side_multiline_replace_alignment() {
+        let ops = vec![DiffOp::Replace {
+            old_range: 0..10,
+            new_range: 0..20,
+            old_text: "a\n".to_string(),
+            new_text: "x\ny\nz\n".to_string(),
+        }];
+        let lines = to_side_by_side(&ops);
+        assert_eq!(lines.len(), 3, "Should have 3 rows for max(1,3) lines");
+        // First row: both sides present
+        assert!(lines[0].left.is_some());
+        assert!(lines[0].right.is_some());
+        // Row 2,3: only right side
+        assert!(lines[1].left.is_none());
+        assert!(lines[1].right.is_some());
+        assert!(lines[2].left.is_none());
+        assert!(lines[2].right.is_some());
     }
 }

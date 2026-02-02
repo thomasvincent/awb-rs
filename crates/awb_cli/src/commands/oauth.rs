@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use awb_security::{CredentialPort, KeyringCredentialStore};
 use dialoguer::{Input, Password};
+use secrecy::SecretString;
 use url::Url;
 
 pub async fn setup(
@@ -37,9 +38,9 @@ pub async fn setup(
     // Create profile with OAuth1 auth
     let auth_method = AuthMethod::OAuth1 {
         consumer_key: consumer_key.clone(),
-        consumer_secret: consumer_secret.clone(),
+        consumer_secret: SecretString::new(consumer_secret.clone().into()),
         access_token: access_token.clone(),
-        access_secret: access_secret.clone(),
+        access_secret: SecretString::new(access_secret.clone().into()),
     };
 
     let profile_obj = Profile {
@@ -114,7 +115,7 @@ pub async fn authorize(wiki: Url, client_id: String, profile: String) -> Result<
 
     let config = OAuth2Config {
         client_id: client_id.clone(),
-        client_secret: client_secret.clone(),
+        client_secret: client_secret.clone().into(),
         redirect_uri: redirect_uri.clone(),
         token_endpoint,
         auth_endpoint,
@@ -157,7 +158,7 @@ pub async fn authorize(wiki: Url, client_id: String, profile: String) -> Result<
     use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};
     let auth_method = AuthMethod::OAuth2 {
         client_id,
-        client_secret,
+        client_secret: SecretString::new(client_secret.into()),
     };
 
     let profile_obj = Profile {

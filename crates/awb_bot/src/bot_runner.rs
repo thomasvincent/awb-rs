@@ -245,6 +245,13 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 .await
                 .map_err(|e| BotError::ApiError(e.to_string()))?;
 
+            if response.result != "Success" {
+                return Err(BotError::ApiError(format!(
+                    "Edit failed for {}: {}",
+                    page_title, response.result
+                )));
+            }
+
             let duration = page_start.elapsed().as_millis() as u64;
             self.emit_telemetry(TelemetryEvent::PageProcessed {
                 title: page_title.to_string(),

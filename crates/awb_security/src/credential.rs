@@ -94,17 +94,15 @@ impl FileCredentialStore {
         let credentials_dir = home_dir.join(".awb-rs");
         let credentials_path = credentials_dir.join("credentials.json");
 
-        // Create directory if it doesn't exist
-        if !credentials_dir.exists() {
-            std::fs::create_dir_all(&credentials_dir)?;
+        // Create directory unconditionally - create_dir_all is idempotent
+        std::fs::create_dir_all(&credentials_dir)?;
 
-            // Set directory permissions to 0700 on Unix
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o700);
-                std::fs::set_permissions(&credentials_dir, perms)?;
-            }
+        // Always set directory permissions to 0700 on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o700);
+            std::fs::set_permissions(&credentials_dir, perms)?;
         }
 
         Ok(Self { credentials_path })
@@ -134,20 +132,29 @@ impl FileCredentialStore {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
 
+            // Write to a temporary file first
+            let tmp_path = self.credentials_path.with_extension("tmp");
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .mode(0o600)
-                .open(&self.credentials_path)?;
+                .open(&tmp_path)?;
 
             file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+
+            // Atomically rename to the target path
+            std::fs::rename(&tmp_path, &self.credentials_path)?;
         }
 
-        // On non-Unix, write then set permissions
+        // On non-Unix, write to temp file then rename
         #[cfg(not(unix))]
         {
-            std::fs::write(&self.credentials_path, json)?;
+            let tmp_path = self.credentials_path.with_extension("tmp");
+            std::fs::write(&tmp_path, json)?;
+            std::fs::rename(&tmp_path, &self.credentials_path)?;
         }
 
         Ok(())

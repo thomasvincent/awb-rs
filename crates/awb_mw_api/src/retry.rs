@@ -31,11 +31,21 @@ impl RetryPolicy {
             match op().await {
                 Ok(val) => return Ok(val),
                 Err(e) if e.is_retryable() && attempt < self.max_retries => {
-                    let delay_secs = self.base_delay.as_secs_f64() * 2f64.powi(attempt as i32);
+                    let internal_secs =
+                        self.base_delay.as_secs_f64() * 2f64.powi(attempt as i32);
+                    let internal_delay = internal_secs.min(self.max_delay.as_secs_f64());
+
+                    // Honor server-requested retry_after for MaxLag and RateLimited
+                    let server_delay = match &e {
+                        MwApiError::MaxLag { retry_after } => *retry_after as f64,
+                        MwApiError::RateLimited { retry_after } => *retry_after as f64,
+                        _ => 0.0,
+                    };
+
+                    let effective_delay = internal_delay.max(server_delay);
                     let jitter = rand_jitter();
-                    let delay = Duration::from_secs_f64(
-                        delay_secs.min(self.max_delay.as_secs_f64()) + jitter,
-                    );
+                    let delay = Duration::from_secs_f64(effective_delay + jitter);
+
                     warn!(attempt, ?delay, error = %e, "Retrying after error");
                     sleep(delay).await;
                     attempt += 1;
@@ -250,5 +260,86 @@ mod tests {
                 "Jitter should be in [0, 1) range"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_maxlag_retry_after_overrides_backoff() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        // Base delay is 10ms, but MaxLag says retry_after: 30 (seconds)
+        // The effective delay should be at least 30s (we can't wait that long in tests,
+        // so we verify the logic by checking the attempt count with a short retry_after)
+        let policy = RetryPolicy {
+            max_retries: 1,
+            base_delay: Duration::from_millis(10),  // internal backoff: 10ms
+            max_delay: Duration::from_secs(60),
+        };
+
+        let call_count = Arc::new(AtomicU32::new(0));
+        let cc = call_count.clone();
+
+        let start = std::time::Instant::now();
+        let _ = policy
+            .execute(move || {
+                let count = cc.clone();
+                async move {
+                    let c = count.fetch_add(1, Ordering::SeqCst);
+                    if c == 0 {
+                        // retry_after=1 second — this should override the 10ms internal backoff
+                        Err::<i32, MwApiError>(MwApiError::MaxLag { retry_after: 1 })
+                    } else {
+                        Ok(42)
+                    }
+                }
+            })
+            .await;
+
+        let elapsed = start.elapsed();
+        // Should have waited at least ~1 second (the retry_after), not just 10ms
+        assert!(
+            elapsed >= Duration::from_millis(900),
+            "Expected delay >= 900ms from retry_after=1, got {:?}",
+            elapsed
+        );
+    }
+
+    #[tokio::test]
+    async fn test_maxlag_without_large_retry_after_uses_backoff() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        // retry_after=0 means server doesn't specify, so internal backoff (10ms) should apply
+        let policy = RetryPolicy {
+            max_retries: 1,
+            base_delay: Duration::from_millis(10),
+            max_delay: Duration::from_secs(60),
+        };
+
+        let call_count = Arc::new(AtomicU32::new(0));
+        let cc = call_count.clone();
+
+        let start = std::time::Instant::now();
+        let _ = policy
+            .execute(move || {
+                let count = cc.clone();
+                async move {
+                    let c = count.fetch_add(1, Ordering::SeqCst);
+                    if c == 0 {
+                        Err::<i32, MwApiError>(MwApiError::MaxLag { retry_after: 0 })
+                    } else {
+                        Ok(42)
+                    }
+                }
+            })
+            .await;
+
+        let elapsed = start.elapsed();
+        // Should have used internal backoff (~10ms + jitter), not a long delay
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "Expected short delay with retry_after=0, got {:?}",
+            elapsed
+        );
     }
 }
