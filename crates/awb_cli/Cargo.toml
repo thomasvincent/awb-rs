@@ -1,10 +1,17 @@
 [package]
 name = "awb_cli"
+description = "Command-line AutoWikiBrowser for MediaWiki"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "../../README.md"
+keywords = ["cli", "mediawiki", "wikipedia", "bot", "editing"]
+categories = ["command-line-utilities", "web-programming"]
 
 [[bin]]
 name = "awb-rs"

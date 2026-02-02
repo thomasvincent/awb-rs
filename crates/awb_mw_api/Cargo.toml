@@ -1,10 +1,17 @@
 [package]
 name = "awb_mw_api"
-description = "MediaWiki API client for AWB-RS"
+description = "Async MediaWiki API client for Rust"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "../../README.md"
+keywords = ["mediawiki", "api", "client", "async", "wikipedia"]
+categories = ["api-bindings", "web-programming", "asynchronous"]
 
 [dependencies]
 awb_domain = { path = "../awb_domain" }
