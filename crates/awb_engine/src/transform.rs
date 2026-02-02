@@ -77,6 +77,8 @@ impl TransformEngine {
                 } => {
                     let regex = regex::RegexBuilder::new(pattern)
                         .case_insensitive(*case_insensitive)
+                        .size_limit(1 << 20)
+                        .dfa_size_limit(1 << 20)
                         .build()
                         .map_err(|e| TransformError::InvalidRegex {
                             rule_id: rule.id,

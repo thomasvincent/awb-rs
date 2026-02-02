@@ -57,12 +57,9 @@ impl RetryPolicy {
 }
 
 fn rand_jitter() -> f64 {
-    // Simple deterministic jitter based on current time nanoseconds
-    let ns = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    (ns % 1000) as f64 / 1000.0
+    // Use rand crate for proper randomness
+    use rand::Rng;
+    rand::thread_rng().gen_range(0.0..1.0)
 }
 
 #[cfg(test)]
