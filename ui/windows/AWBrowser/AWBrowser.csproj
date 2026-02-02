@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <AssemblyName>AWBrowser</AssemblyName>
+    <RootNamespace>AWBrowser</RootNamespace>
+    <Version>0.1.0</Version>
+    <Authors>AWB-RS Team</Authors>
+    <Company>AWB-RS</Company>
+    <Product>AutoWikiBrowser Rust Edition</Product>
+    <Description>Windows UI for AWB-RS WikiText editor</Description>
+    <Copyright>Copyright © 2025 MIT OR Apache-2.0</Copyright>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
+    <PackageReference Include="DiffPlex" Version="1.7.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to the Rust FFI library (awb_ffi.dll) -->
+    <!-- Will be built separately and placed in the output directory -->
+    <None Include="..\..\..\target\release\awb_ffi.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\..\target\release\awb_ffi.dll')" />
+  </ItemGroup>
+
+</Project>

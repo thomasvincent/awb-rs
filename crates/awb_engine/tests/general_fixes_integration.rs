@@ -1,8 +1,8 @@
+use awb_domain::types::{Namespace, Title};
 use awb_engine::general_fixes::{
-    FixContext, FixRegistry, FixModule, CitationFormatting, DuplicateWikilinkRemoval,
-    UnicodeNormalization, DefaultSortFix,
+    CitationFormatting, DefaultSortFix, DuplicateWikilinkRemoval, FixContext, FixModule,
+    FixRegistry, UnicodeNormalization,
 };
-use awb_domain::types::{Title, Namespace};
 use std::collections::HashSet;
 
 fn test_context(title_name: &str) -> FixContext {
@@ -58,7 +58,10 @@ fn test_duplicate_wikilink_removal() {
     let result = fix.apply(input, &ctx);
 
     // First link should remain, second should become plain text
-    assert_eq!(result, "The [[Python (programming language)|Python]] language and Python again.");
+    assert_eq!(
+        result,
+        "The [[Python (programming language)|Python]] language and Python again."
+    );
 }
 
 #[test]

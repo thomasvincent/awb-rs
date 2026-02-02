@@ -11,6 +11,8 @@ members = [
     "crates/awb_ffi",
     "crates/awb_cli",
     "crates/awb_plugins",
+]
+exclude = [
     "ui/linux/awb_gtk",
 ]
 

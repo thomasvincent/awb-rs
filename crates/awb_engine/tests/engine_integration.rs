@@ -63,8 +63,13 @@ fn test_skip_engine_with_transform_engine() {
     allowed_namespaces.insert(Namespace::MAIN);
 
     let skip_conditions = vec![
-        SkipCondition::Namespace { allowed: allowed_namespaces },
-        SkipCondition::PageSize { min_bytes: Some(50), max_bytes: Some(500) },
+        SkipCondition::Namespace {
+            allowed: allowed_namespaces,
+        },
+        SkipCondition::PageSize {
+            min_bytes: Some(50),
+            max_bytes: Some(500),
+        },
     ];
 
     let skip_engine = SkipEngine::new(skip_conditions).unwrap();
@@ -77,11 +82,17 @@ fn test_skip_engine_with_transform_engine() {
 
     // Test page that should be skipped (wrong namespace)
     let skip_page = create_test_page(Namespace::TALK, "Discussion", "old content", 100);
-    assert_eq!(skip_engine.evaluate(&skip_page), SkipDecision::Skip("namespace filtered"));
+    assert_eq!(
+        skip_engine.evaluate(&skip_page),
+        SkipDecision::Skip("namespace filtered")
+    );
 
     // Test page that should be skipped (too small)
     let too_small = create_test_page(Namespace::MAIN, "Small", "old", 10);
-    assert_eq!(skip_engine.evaluate(&too_small), SkipDecision::Skip("page too small"));
+    assert_eq!(
+        skip_engine.evaluate(&too_small),
+        SkipDecision::Skip("page too small")
+    );
 
     // Test page that should be processed
     let good_page = create_test_page(Namespace::MAIN, "Good", "old content", 100);
@@ -108,7 +119,10 @@ fn test_review_state_machine_complete_cycle() {
         Title::new(Namespace::MAIN, "Page3"),
     ];
     let effects = machine.transition(ReviewEvent::ListLoaded(titles.clone()));
-    assert!(matches!(machine.state(), ReviewState::FetchingPage { index: 0 }));
+    assert!(matches!(
+        machine.state(),
+        ReviewState::FetchingPage { index: 0 }
+    ));
     assert!(matches!(effects[0], ReviewSideEffect::FetchPage(_)));
 
     // Process each page through the full cycle
@@ -130,7 +144,10 @@ fn test_review_state_machine_complete_cycle() {
             warnings: vec![],
         };
         let effects = machine.transition(ReviewEvent::RulesApplied(plan.clone()));
-        assert!(matches!(machine.state(), ReviewState::AwaitingDecision { .. }));
+        assert!(matches!(
+            machine.state(),
+            ReviewState::AwaitingDecision { .. }
+        ));
         assert!(matches!(effects[0], ReviewSideEffect::PresentForReview(_)));
 
         // User decides to save
@@ -142,7 +159,9 @@ fn test_review_state_machine_complete_cycle() {
         let result = awb_domain::session::EditResult {
             page_id: page.page_id,
             new_revision: Some(RevisionId(101 + i as u64)),
-            outcome: awb_domain::session::EditOutcome::Saved { revision: RevisionId(101 + i as u64) },
+            outcome: awb_domain::session::EditOutcome::Saved {
+                revision: RevisionId(101 + i as u64),
+            },
             timestamp: chrono::Utc::now(),
         };
         let _effects = machine.transition(ReviewEvent::SaveComplete(result));
@@ -196,12 +215,21 @@ Line with trailing spaces
 
     // Categories should be sorted
     let cat_positions: Vec<_> = result.match_indices("[[Category:").collect();
-    assert!(cat_positions.len() >= 3, "Should have at least 3 categories");
+    assert!(
+        cat_positions.len() >= 3,
+        "Should have at least 3 categories"
+    );
 
     // Check that categories appear in alphabetical order
-    let cat_a_pos = result.find("[[Category:A First]]").expect("Category A should exist");
-    let cat_m_pos = result.find("[[Category:M Middle]]").expect("Category M should exist");
-    let cat_z_pos = result.find("[[Category:Z Test]]").expect("Category Z should exist");
+    let cat_a_pos = result
+        .find("[[Category:A First]]")
+        .expect("Category A should exist");
+    let cat_m_pos = result
+        .find("[[Category:M Middle]]")
+        .expect("Category M should exist");
+    let cat_z_pos = result
+        .find("[[Category:Z Test]]")
+        .expect("Category Z should exist");
 
     assert!(cat_a_pos < cat_m_pos, "Category A should come before M");
     assert!(cat_m_pos < cat_z_pos, "Category M should come before Z");
@@ -215,7 +243,11 @@ fn test_transform_with_regex_and_plain_rules() {
     ruleset.add(Rule::new_plain("colour", "color", true));
 
     // Add regex rule to fix date formats
-    ruleset.add(Rule::new_regex(r"(\d{1,2})/(\d{1,2})/(\d{4})", "$3-$1-$2", false));
+    ruleset.add(Rule::new_regex(
+        r"(\d{1,2})/(\d{1,2})/(\d{4})",
+        "$3-$1-$2",
+        false,
+    ));
 
     // Add case-insensitive plain rule
     ruleset.add(Rule::new_plain("WIKI", "wiki", false));
@@ -259,7 +291,11 @@ fn test_warnings_generation() {
 
     let page = create_test_page(Namespace::MAIN, "Test", "small", 10);
     let plan = engine.apply(&page);
-    assert!(plan.warnings.iter().any(|w| matches!(w, Warning::LargeChange { .. })));
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| matches!(w, Warning::LargeChange { .. }))
+    );
 }
 
 #[test]

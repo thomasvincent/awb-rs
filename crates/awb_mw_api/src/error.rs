@@ -4,7 +4,11 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum MwApiError {
     #[error("HTTP error: {status} {url}")]
-    Http { status: u16, url: String, body: String },
+    Http {
+        status: u16,
+        url: String,
+        body: String,
+    },
 
     #[error("maxlag exceeded: retry after {retry_after}s")]
     MaxLag { retry_after: u64 },
@@ -16,7 +20,10 @@ pub enum MwApiError {
     ServiceUnavailable,
 
     #[error("Edit conflict: base={base_rev:?}, current={current_rev:?}")]
-    EditConflict { base_rev: RevisionId, current_rev: RevisionId },
+    EditConflict {
+        base_rev: RevisionId,
+        current_rev: RevisionId,
+    },
 
     #[error("Token expired, refresh needed")]
     BadToken,
@@ -39,6 +46,13 @@ pub enum MwApiError {
 
 impl MwApiError {
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::MaxLag { .. } | Self::RateLimited { .. } | Self::ServiceUnavailable | Self::BadToken | Self::Network(_))
+        matches!(
+            self,
+            Self::MaxLag { .. }
+                | Self::RateLimited { .. }
+                | Self::ServiceUnavailable
+                | Self::BadToken
+                | Self::Network(_)
+        )
     }
 }

@@ -1,0 +1,54 @@
+<UserControl x:Class="AWBrowser.Views.RuleEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="400">
+    <DockPanel>
+        <ToolBar DockPanel.Dock="Top">
+            <Button Content="New" Click="NewRule_Click" ToolTip="Create new rule"/>
+            <Button Content="Load" Click="LoadRules_Click" ToolTip="Load rules from file"/>
+            <Button Content="Save" Click="SaveRules_Click" ToolTip="Save rules to file"/>
+            <Separator/>
+            <Button Content="Import" Click="ImportRules_Click" ToolTip="Import rules"/>
+            <Button Content="Export" Click="ExportRules_Click" ToolTip="Export rules"/>
+        </ToolBar>
+
+        <GroupBox Header="Find/Replace Rules" Margin="5">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <DataGrid x:Name="RulesDataGrid"
+                          Grid.Row="0"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="True"
+                          CanUserDeleteRows="True"
+                          CanUserReorderColumns="False"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="✓" Binding="{Binding Enabled}" Width="30"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="100"/>
+                        <DataGridTextColumn Header="Find Pattern" Binding="{Binding Pattern}" Width="*"/>
+                        <DataGridTextColumn Header="Replace With" Binding="{Binding Replacement}" Width="*"/>
+                        <DataGridCheckBoxColumn Header="Regex" Binding="{Binding IsRegex}" Width="50"/>
+                        <DataGridCheckBoxColumn Header="Case" Binding="{Binding CaseSensitive}" Width="50"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="5">
+                    <Button Content="↑ Up" Click="MoveUp_Click" Width="60" Margin="2"/>
+                    <Button Content="↓ Down" Click="MoveDown_Click" Width="60" Margin="2"/>
+                    <Button Content="✓ Test" Click="TestRule_Click" Width="60" Margin="2"/>
+                    <Button Content="× Delete" Click="DeleteRule_Click" Width="60" Margin="2"/>
+                </StackPanel>
+            </Grid>
+        </GroupBox>
+    </DockPanel>
+</UserControl>

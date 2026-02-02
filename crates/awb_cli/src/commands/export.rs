@@ -22,13 +22,12 @@ pub async fn run(format: ExportFormat, output: PathBuf) -> Result<()> {
         ExportFormat::Plain => TelemetryFormat::PlainText,
     };
 
-    let mut file = File::create(&output)
-        .context("Failed to create output file")?;
+    let mut file = File::create(&output).context("Failed to create output file")?;
 
-    export_log(&events, telemetry_format, &mut file)
-        .context("Failed to export log")?;
+    export_log(&events, telemetry_format, &mut file).context("Failed to export log")?;
 
-    println!("{} Exported {} events to {}",
+    println!(
+        "{} Exported {} events to {}",
         style("✓").green().bold(),
         events.len(),
         output.display()

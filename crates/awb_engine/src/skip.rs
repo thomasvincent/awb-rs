@@ -21,7 +21,10 @@ impl SkipEngine {
                 compiled.push((i, regex::Regex::new(pattern)?));
             }
         }
-        Ok(Self { conditions, compiled_regexes: compiled })
+        Ok(Self {
+            conditions,
+            compiled_regexes: compiled,
+        })
     }
 
     pub fn evaluate(&self, page: &PageContent) -> SkipDecision {
@@ -43,7 +46,10 @@ impl SkipEngine {
                         }
                     }
                 }
-                SkipCondition::PageSize { min_bytes, max_bytes } => {
+                SkipCondition::PageSize {
+                    min_bytes,
+                    max_bytes,
+                } => {
                     if let Some(min) = min_bytes {
                         if page.size_bytes < *min {
                             return SkipDecision::Skip("page too small");
@@ -127,7 +133,10 @@ mod tests {
         let engine = SkipEngine::new(conditions).unwrap();
 
         let page = create_test_page(Namespace::TALK, "test", 100);
-        assert_eq!(engine.evaluate(&page), SkipDecision::Skip("namespace filtered"));
+        assert_eq!(
+            engine.evaluate(&page),
+            SkipDecision::Skip("namespace filtered")
+        );
     }
 
     #[test]
@@ -142,7 +151,10 @@ mod tests {
         assert_eq!(engine.evaluate(&page_with_digits), SkipDecision::Process);
 
         let page_without_digits = create_test_page(Namespace::MAIN, "test", 100);
-        assert_eq!(engine.evaluate(&page_without_digits), SkipDecision::Skip("regex no match"));
+        assert_eq!(
+            engine.evaluate(&page_without_digits),
+            SkipDecision::Skip("regex no match")
+        );
     }
 
     #[test]
@@ -154,7 +166,10 @@ mod tests {
         let engine = SkipEngine::new(conditions).unwrap();
 
         let page_with_digits = create_test_page(Namespace::MAIN, "test 123", 100);
-        assert_eq!(engine.evaluate(&page_with_digits), SkipDecision::Skip("regex match (inverted)"));
+        assert_eq!(
+            engine.evaluate(&page_with_digits),
+            SkipDecision::Skip("regex match (inverted)")
+        );
 
         let page_without_digits = create_test_page(Namespace::MAIN, "test", 100);
         assert_eq!(engine.evaluate(&page_without_digits), SkipDecision::Process);
@@ -179,7 +194,10 @@ mod tests {
         let engine = SkipEngine::new(conditions).unwrap();
 
         let small_page = create_test_page(Namespace::MAIN, "x", 50);
-        assert_eq!(engine.evaluate(&small_page), SkipDecision::Skip("page too small"));
+        assert_eq!(
+            engine.evaluate(&small_page),
+            SkipDecision::Skip("page too small")
+        );
 
         let large_page = create_test_page(Namespace::MAIN, "x", 150);
         assert_eq!(engine.evaluate(&large_page), SkipDecision::Process);
@@ -197,7 +215,10 @@ mod tests {
         assert_eq!(engine.evaluate(&small_page), SkipDecision::Process);
 
         let large_page = create_test_page(Namespace::MAIN, "x", 150);
-        assert_eq!(engine.evaluate(&large_page), SkipDecision::Skip("page too large"));
+        assert_eq!(
+            engine.evaluate(&large_page),
+            SkipDecision::Skip("page too large")
+        );
     }
 
     #[test]
@@ -209,13 +230,19 @@ mod tests {
         let engine = SkipEngine::new(conditions).unwrap();
 
         let too_small = create_test_page(Namespace::MAIN, "x", 30);
-        assert_eq!(engine.evaluate(&too_small), SkipDecision::Skip("page too small"));
+        assert_eq!(
+            engine.evaluate(&too_small),
+            SkipDecision::Skip("page too small")
+        );
 
         let just_right = create_test_page(Namespace::MAIN, "x", 100);
         assert_eq!(engine.evaluate(&just_right), SkipDecision::Process);
 
         let too_large = create_test_page(Namespace::MAIN, "x", 200);
-        assert_eq!(engine.evaluate(&too_large), SkipDecision::Skip("page too large"));
+        assert_eq!(
+            engine.evaluate(&too_large),
+            SkipDecision::Skip("page too large")
+        );
     }
 
     #[test]
@@ -228,7 +255,10 @@ mod tests {
         let mut page = create_test_page(Namespace::MAIN, "test", 100);
         page.protection.edit = Some(ProtectionLevel::Sysop);
 
-        assert_eq!(engine.evaluate(&page), SkipDecision::Skip("protection too high"));
+        assert_eq!(
+            engine.evaluate(&page),
+            SkipDecision::Skip("protection too high")
+        );
     }
 
     #[test]
@@ -252,7 +282,10 @@ mod tests {
         let mut redirect_page = create_test_page(Namespace::MAIN, "#REDIRECT [[Target]]", 50);
         redirect_page.is_redirect = true;
 
-        assert_eq!(engine.evaluate(&redirect_page), SkipDecision::Skip("is redirect"));
+        assert_eq!(
+            engine.evaluate(&redirect_page),
+            SkipDecision::Skip("is redirect")
+        );
 
         let normal_page = create_test_page(Namespace::MAIN, "content", 100);
         assert_eq!(engine.evaluate(&normal_page), SkipDecision::Process);
@@ -266,7 +299,10 @@ mod tests {
         let mut disambig_page = create_test_page(Namespace::MAIN, "test", 100);
         disambig_page.properties.is_disambig = true;
 
-        assert_eq!(engine.evaluate(&disambig_page), SkipDecision::Skip("is disambiguation"));
+        assert_eq!(
+            engine.evaluate(&disambig_page),
+            SkipDecision::Skip("is disambiguation")
+        );
 
         let normal_page = create_test_page(Namespace::MAIN, "content", 100);
         assert_eq!(engine.evaluate(&normal_page), SkipDecision::Process);
@@ -292,19 +328,37 @@ mod tests {
 
         // Should fail namespace check
         let wrong_ns = create_test_page(Namespace::TALK, "test", 100);
-        assert_eq!(engine.evaluate(&wrong_ns), SkipDecision::Skip("namespace filtered"));
+        assert_eq!(
+            engine.evaluate(&wrong_ns),
+            SkipDecision::Skip("namespace filtered")
+        );
 
         // Should fail size check
         let too_large = create_test_page(Namespace::MAIN, "test", 2000);
-        assert_eq!(engine.evaluate(&too_large), SkipDecision::Skip("page too large"));
+        assert_eq!(
+            engine.evaluate(&too_large),
+            SkipDecision::Skip("page too large")
+        );
     }
 
     #[test]
     fn test_protection_exceeds_function() {
-        assert!(!protection_exceeds(&ProtectionLevel::Autoconfirmed, &ProtectionLevel::Autoconfirmed));
-        assert!(!protection_exceeds(&ProtectionLevel::Autoconfirmed, &ProtectionLevel::Sysop));
-        assert!(protection_exceeds(&ProtectionLevel::Sysop, &ProtectionLevel::Autoconfirmed));
-        assert!(protection_exceeds(&ProtectionLevel::ExtendedConfirmed, &ProtectionLevel::Autoconfirmed));
+        assert!(!protection_exceeds(
+            &ProtectionLevel::Autoconfirmed,
+            &ProtectionLevel::Autoconfirmed
+        ));
+        assert!(!protection_exceeds(
+            &ProtectionLevel::Autoconfirmed,
+            &ProtectionLevel::Sysop
+        ));
+        assert!(protection_exceeds(
+            &ProtectionLevel::Sysop,
+            &ProtectionLevel::Autoconfirmed
+        ));
+        assert!(protection_exceeds(
+            &ProtectionLevel::ExtendedConfirmed,
+            &ProtectionLevel::Autoconfirmed
+        ));
     }
 
     #[test]

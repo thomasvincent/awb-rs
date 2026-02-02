@@ -4,8 +4,8 @@
 // The UniFFI-generated bindings in lib.rs are the primary interface for macOS/iOS.
 // This file can be extended for additional C-specific functionality if needed.
 
-use std::os::raw::c_char;
 use std::ffi::CString;
+use std::os::raw::c_char;
 
 // Re-export the main FFI functions for C compatibility
 // UniFFI handles the actual implementation, but we provide C wrappers here

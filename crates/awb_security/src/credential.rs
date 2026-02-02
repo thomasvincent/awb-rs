@@ -1,6 +1,6 @@
-use thiserror::Error;
-use std::path::PathBuf;
 use keyring::Entry;
+use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CredentialError {
@@ -43,30 +43,37 @@ pub struct InMemoryCredentialStore {
 
 impl InMemoryCredentialStore {
     pub fn new() -> Self {
-        Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) }
+        Self {
+            store: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
     }
 }
 
 impl Default for InMemoryCredentialStore {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CredentialPort for InMemoryCredentialStore {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError> {
-        self.store.lock()
+        self.store
+            .lock()
             .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
             .get(profile_id)
             .cloned()
             .ok_or_else(|| CredentialError::NotFound(profile_id.to_string()))
     }
     fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError> {
-        self.store.lock()
+        self.store
+            .lock()
             .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
             .insert(profile_id.to_string(), password.to_string());
         Ok(())
     }
     fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError> {
-        self.store.lock()
+        self.store
+            .lock()
             .map_err(|_| CredentialError::Backend("lock poisoned".into()))?
             .remove(profile_id);
         Ok(())
@@ -115,14 +122,17 @@ impl FileCredentialStore {
     }
 
     /// Save credentials to file with proper permissions
-    fn save(&self, credentials: &std::collections::HashMap<String, String>) -> Result<(), CredentialError> {
+    fn save(
+        &self,
+        credentials: &std::collections::HashMap<String, String>,
+    ) -> Result<(), CredentialError> {
         let json = serde_json::to_string_pretty(credentials)?;
 
         // Atomically create file with secure permissions on Unix
         #[cfg(unix)]
         {
-            use std::os::unix::fs::OpenOptionsExt;
             use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
 
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
@@ -200,37 +210,33 @@ impl Default for KeyringCredentialStore {
 impl CredentialPort for KeyringCredentialStore {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError> {
         let entry = self.entry(profile_id)?;
-        entry
-            .get_password()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => CredentialError::NotFound(profile_id.to_string()),
-                keyring::Error::PlatformFailure(ref err) => {
-                    let err_msg = err.to_string().to_lowercase();
-                    if err_msg.contains("denied") || err_msg.contains("access") {
-                        CredentialError::AccessDenied
-                    } else {
-                        CredentialError::Backend(format!("Keyring error: {}", e))
-                    }
+        entry.get_password().map_err(|e| match e {
+            keyring::Error::NoEntry => CredentialError::NotFound(profile_id.to_string()),
+            keyring::Error::PlatformFailure(ref err) => {
+                let err_msg = err.to_string().to_lowercase();
+                if err_msg.contains("denied") || err_msg.contains("access") {
+                    CredentialError::AccessDenied
+                } else {
+                    CredentialError::Backend(format!("Keyring error: {}", e))
                 }
-                _ => CredentialError::Backend(format!("Keyring error: {}", e)),
-            })
+            }
+            _ => CredentialError::Backend(format!("Keyring error: {}", e)),
+        })
     }
 
     fn set_password(&self, profile_id: &str, password: &str) -> Result<(), CredentialError> {
         let entry = self.entry(profile_id)?;
-        entry
-            .set_password(password)
-            .map_err(|e| match e {
-                keyring::Error::PlatformFailure(ref err) => {
-                    let err_msg = err.to_string().to_lowercase();
-                    if err_msg.contains("denied") || err_msg.contains("access") {
-                        CredentialError::AccessDenied
-                    } else {
-                        CredentialError::Backend(format!("Keyring error: {}", e))
-                    }
+        entry.set_password(password).map_err(|e| match e {
+            keyring::Error::PlatformFailure(ref err) => {
+                let err_msg = err.to_string().to_lowercase();
+                if err_msg.contains("denied") || err_msg.contains("access") {
+                    CredentialError::AccessDenied
+                } else {
+                    CredentialError::Backend(format!("Keyring error: {}", e))
                 }
-                _ => CredentialError::Backend(format!("Keyring error: {}", e)),
-            })
+            }
+            _ => CredentialError::Backend(format!("Keyring error: {}", e)),
+        })
     }
 
     fn delete_password(&self, profile_id: &str) -> Result<(), CredentialError> {
@@ -338,7 +344,9 @@ mod tests {
         std::fs::create_dir_all(&credentials_dir).unwrap();
 
         // Manually create FileCredentialStore with custom path
-        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+        let store = FileCredentialStore {
+            credentials_path: credentials_path.clone(),
+        };
 
         // Set a password
         let result = store.set_password("test", "secret");
@@ -411,7 +419,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let credentials_path = temp_dir.path().join("credentials.json");
 
-        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+        let store = FileCredentialStore {
+            credentials_path: credentials_path.clone(),
+        };
 
         // Save a credential
         store.set_password("test", "secret").unwrap();
@@ -421,7 +431,11 @@ mod tests {
         let mode = metadata.permissions().mode();
 
         // Should be 0600 (owner read/write only)
-        assert_eq!(mode & 0o777, 0o600, "Credentials file should have 0600 permissions");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "Credentials file should have 0600 permissions"
+        );
     }
 
     #[test]
@@ -431,7 +445,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let credentials_path = temp_dir.path().join("credentials.json");
 
-        let store = FileCredentialStore { credentials_path: credentials_path.clone() };
+        let store = FileCredentialStore {
+            credentials_path: credentials_path.clone(),
+        };
 
         // Load from nonexistent file should return empty map
         let credentials = store.load().unwrap();

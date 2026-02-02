@@ -1,10 +1,10 @@
 use crate::error::MwApiError;
-use crate::throttle::ThrottleController;
-use crate::retry::RetryPolicy;
 use crate::oauth::{OAuth1Config, OAuthSession};
-use awb_domain::types::*;
-use awb_domain::profile::ThrottlePolicy;
+use crate::retry::RetryPolicy;
+use crate::throttle::ThrottleController;
 use async_trait::async_trait;
+use awb_domain::profile::ThrottlePolicy;
+use awb_domain::types::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -80,7 +80,13 @@ impl ReqwestMwClient {
     }
 
     /// Apply authentication to a request builder
-    async fn apply_auth(&self, mut builder: reqwest::RequestBuilder, method: &str, url: &str, params: &[(String, String)]) -> Result<reqwest::RequestBuilder, MwApiError> {
+    async fn apply_auth(
+        &self,
+        mut builder: reqwest::RequestBuilder,
+        method: &str,
+        url: &str,
+        params: &[(String, String)],
+    ) -> Result<reqwest::RequestBuilder, MwApiError> {
         let auth_state = self.auth_state.read().await;
 
         match &*auth_state {
@@ -92,7 +98,8 @@ impl ReqwestMwClient {
                 // For OAuth 1.0a, we need to sign each request
                 let config_clone = config.clone();
                 drop(auth_state);
-                let auth_header = crate::oauth::oauth1_sign_request(&config_clone, method, url, params)?;
+                let auth_header =
+                    crate::oauth::oauth1_sign_request(&config_clone, method, url, params)?;
                 builder = builder.header("Authorization", auth_header);
                 Ok(builder)
             }
@@ -104,7 +111,9 @@ impl ReqwestMwClient {
                 let access_token = session_clone.get_access_token().await?;
 
                 // Update session if token was refreshed
-                *self.auth_state.write().await = AuthState::OAuth2 { session: session_clone };
+                *self.auth_state.write().await = AuthState::OAuth2 {
+                    session: session_clone,
+                };
 
                 builder = builder.header("Authorization", format!("Bearer {}", access_token));
                 Ok(builder)
@@ -156,9 +165,10 @@ impl MediaWikiClient for ReqwestMwClient {
             ("maxlag".to_string(), maxlag.to_string()),
         ];
 
-        let resp: serde_json::Value = self.retry_policy.execute(|| async {
-            let builder = self.http.get(self.api_url.as_str())
-                .query(&[
+        let resp: serde_json::Value = self
+            .retry_policy
+            .execute(|| async {
+                let builder = self.http.get(self.api_url.as_str()).query(&[
                     ("action", "query"),
                     ("titles", &title.display),
                     ("prop", "revisions|info|pageprops"),
@@ -169,15 +179,19 @@ impl MediaWikiClient for ReqwestMwClient {
                     ("maxlag", &maxlag.to_string()),
                 ]);
 
-            let builder = self.apply_auth(builder, "GET", self.api_url.as_str(), &params).await?;
-            builder.send().await?.json().await.map_err(MwApiError::from)
-        }).await?;
+                let builder = self
+                    .apply_auth(builder, "GET", self.api_url.as_str(), &params)
+                    .await?;
+                builder.send().await?.json().await.map_err(MwApiError::from)
+            })
+            .await?;
 
         // Check for API errors
         if let Some(error) = resp.get("error") {
             let code = error["code"].as_str().unwrap_or("unknown").to_string();
             if code == "maxlag" {
-                let retry_after = error["info"].as_str()
+                let retry_after = error["info"]
+                    .as_str()
                     .and_then(|s| s.split_whitespace().find_map(|w| w.parse::<u64>().ok()))
                     .unwrap_or(5);
                 return Err(MwApiError::MaxLag { retry_after });
@@ -188,9 +202,13 @@ impl MediaWikiClient for ReqwestMwClient {
 
         // Parse response
         let pages = &resp["query"]["pages"];
-        let page = pages.as_object()
+        let page = pages
+            .as_object()
             .and_then(|m| m.values().next())
-            .ok_or_else(|| MwApiError::ApiError { code: "nopage".into(), info: "No page data returned".into() })?;
+            .ok_or_else(|| MwApiError::ApiError {
+                code: "nopage".into(),
+                info: "No page data returned".into(),
+            })?;
 
         let page_id = PageId(page["pageid"].as_u64().unwrap_or(0));
         let ns = Namespace(page["ns"].as_i64().unwrap_or(0) as i32);
@@ -202,7 +220,10 @@ impl MediaWikiClient for ReqwestMwClient {
         let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now());
-        let wikitext = rev["slots"]["main"]["content"].as_str().unwrap_or("").to_string();
+        let wikitext = rev["slots"]["main"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
 
         let is_redirect = page.get("redirect").is_some();
 
@@ -227,24 +248,33 @@ impl MediaWikiClient for ReqwestMwClient {
             info
         };
 
-        let is_disambig = page.get("pageprops")
+        let is_disambig = page
+            .get("pageprops")
             .and_then(|pp| pp.get("disambiguation"))
             .is_some();
 
-        let wikibase_item = page.get("pageprops")
+        let wikibase_item = page
+            .get("pageprops")
             .and_then(|pp| pp["wikibase_item"].as_str())
             .map(String::from);
 
         Ok(PageContent {
             page_id,
-            title: Title { namespace: ns, name: page_title.clone(), display: page_title },
+            title: Title {
+                namespace: ns,
+                name: page_title.clone(),
+                display: page_title,
+            },
             revision,
             timestamp,
             wikitext: wikitext.clone(),
             size_bytes: wikitext.len() as u64,
             is_redirect,
             protection,
-            properties: PageProperties { is_disambig, wikibase_item },
+            properties: PageProperties {
+                is_disambig,
+                wikibase_item,
+            },
         })
     }
 
@@ -273,18 +303,26 @@ impl MediaWikiClient for ReqwestMwClient {
             ("format".to_string(), "json".to_string()),
             ("maxlag".to_string(), self.throttle.maxlag().to_string()),
         ];
-        if edit.minor { params.push(("minor".to_string(), "1".to_string())); }
-        if edit.bot { params.push(("bot".to_string(), "1".to_string())); }
+        if edit.minor {
+            params.push(("minor".to_string(), "1".to_string()));
+        }
+        if edit.bot {
+            params.push(("bot".to_string(), "1".to_string()));
+        }
         if let Some(section) = edit.section {
             params.push(("section".to_string(), section.to_string()));
         }
 
-        let resp: serde_json::Value = self.retry_policy.execute(|| async {
-            let builder = self.http.post(self.api_url.as_str())
-                .form(&params);
-            let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
-            builder.send().await?.json().await.map_err(MwApiError::from)
-        }).await?;
+        let resp: serde_json::Value = self
+            .retry_policy
+            .execute(|| async {
+                let builder = self.http.post(self.api_url.as_str()).form(&params);
+                let builder = self
+                    .apply_auth(builder, "POST", self.api_url.as_str(), &params)
+                    .await?;
+                builder.send().await?.json().await.map_err(MwApiError::from)
+            })
+            .await?;
 
         // Check errors
         if let Some(error) = resp.get("error") {
@@ -323,9 +361,10 @@ impl MediaWikiClient for ReqwestMwClient {
             ("format".to_string(), "json".to_string()),
         ];
 
-        let resp: serde_json::Value = self.retry_policy.execute(|| async {
-            let builder = self.http.post(self.api_url.as_str())
-                .form(&[
+        let resp: serde_json::Value = self
+            .retry_policy
+            .execute(|| async {
+                let builder = self.http.post(self.api_url.as_str()).form(&[
                     ("action", "parse"),
                     ("text", wikitext),
                     ("title", &title.display),
@@ -333,14 +372,20 @@ impl MediaWikiClient for ReqwestMwClient {
                     ("prop", "text"),
                     ("format", "json"),
                 ]);
-            let builder = self.apply_auth(builder, "POST", self.api_url.as_str(), &params).await?;
-            builder.send().await?.json().await.map_err(MwApiError::from)
-        }).await?;
+                let builder = self
+                    .apply_auth(builder, "POST", self.api_url.as_str(), &params)
+                    .await?;
+                builder.send().await?.json().await.map_err(MwApiError::from)
+            })
+            .await?;
 
         resp["parse"]["text"]["*"]
             .as_str()
             .map(String::from)
-            .ok_or_else(|| MwApiError::ApiError { code: "noparse".into(), info: "No parsed HTML returned".into() })
+            .ok_or_else(|| MwApiError::ApiError {
+                code: "noparse".into(),
+                info: "No parsed HTML returned".into(),
+            })
     }
 }
 
@@ -395,8 +440,13 @@ mod tests {
         let builder = client.http.get(api_url.as_str());
 
         // Apply auth should succeed with None state
-        let result = client.apply_auth(builder, "GET", api_url.as_str(), &[]).await;
-        assert!(result.is_ok(), "apply_auth with AuthState::None should succeed");
+        let result = client
+            .apply_auth(builder, "GET", api_url.as_str(), &[])
+            .await;
+        assert!(
+            result.is_ok(),
+            "apply_auth with AuthState::None should succeed"
+        );
     }
 
     #[tokio::test]
@@ -415,9 +465,14 @@ mod tests {
         *client.auth_state.write().await = AuthState::BotPassword;
 
         let builder = client.http.get(api_url.as_str());
-        let result = client.apply_auth(builder, "GET", api_url.as_str(), &[]).await;
+        let result = client
+            .apply_auth(builder, "GET", api_url.as_str(), &[])
+            .await;
 
-        assert!(result.is_ok(), "apply_auth with AuthState::BotPassword should succeed");
+        assert!(
+            result.is_ok(),
+            "apply_auth with AuthState::BotPassword should succeed"
+        );
     }
 
     #[test]
@@ -457,7 +512,10 @@ mod tests {
         let response: EditResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.result, "Success");
         assert_eq!(response.new_revid, Some(12345));
-        assert_eq!(response.new_timestamp, Some("2024-01-01T00:00:00Z".to_string()));
+        assert_eq!(
+            response.new_timestamp,
+            Some("2024-01-01T00:00:00Z".to_string())
+        );
     }
 
     #[test]

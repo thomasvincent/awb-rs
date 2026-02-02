@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use std::collections::HashSet;
-use crate::types::*;
-use crate::rules::RuleSet;
 use crate::diff::DiffOp;
+use crate::rules::RuleSet;
+use crate::types::*;
 use crate::warnings::Warning;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionState {
@@ -77,19 +77,38 @@ pub struct EditResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EditOutcome {
-    Saved { revision: RevisionId },
-    Skipped { reason: String },
+    Saved {
+        revision: RevisionId,
+    },
+    Skipped {
+        reason: String,
+    },
     NoChange,
-    Conflict { base_rev: RevisionId, current_rev: RevisionId },
-    Error { message: String },
+    Conflict {
+        base_rev: RevisionId,
+        current_rev: RevisionId,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SkipCondition {
-    Namespace { allowed: HashSet<Namespace> },
-    RegexMatch { pattern: String, invert: bool },
-    PageSize { min_bytes: Option<u64>, max_bytes: Option<u64> },
-    Protection { max_level: ProtectionLevel },
+    Namespace {
+        allowed: HashSet<Namespace>,
+    },
+    RegexMatch {
+        pattern: String,
+        invert: bool,
+    },
+    PageSize {
+        min_bytes: Option<u64>,
+        max_bytes: Option<u64>,
+    },
+    Protection {
+        max_level: ProtectionLevel,
+    },
     IsRedirect(bool),
     IsDisambig(bool),
 }
@@ -136,7 +155,9 @@ mod tests {
 
     #[test]
     fn test_edit_outcome_saved() {
-        let outcome = EditOutcome::Saved { revision: RevisionId(123) };
+        let outcome = EditOutcome::Saved {
+            revision: RevisionId(123),
+        };
         match outcome {
             EditOutcome::Saved { revision } => assert_eq!(revision.0, 123),
             _ => panic!("Expected Saved outcome"),
@@ -150,7 +171,10 @@ mod tests {
             current_rev: RevisionId(101),
         };
         match outcome {
-            EditOutcome::Conflict { base_rev, current_rev } => {
+            EditOutcome::Conflict {
+                base_rev,
+                current_rev,
+            } => {
                 assert_eq!(base_rev.0, 100);
                 assert_eq!(current_rev.0, 101);
             }
@@ -164,7 +188,9 @@ mod tests {
         allowed.insert(Namespace::MAIN);
         allowed.insert(Namespace::USER);
 
-        let condition = SkipCondition::Namespace { allowed: allowed.clone() };
+        let condition = SkipCondition::Namespace {
+            allowed: allowed.clone(),
+        };
         match condition {
             SkipCondition::Namespace { allowed: a } => {
                 assert!(a.contains(&Namespace::MAIN));
@@ -181,7 +207,10 @@ mod tests {
             max_bytes: Some(10000),
         };
         match condition {
-            SkipCondition::PageSize { min_bytes, max_bytes } => {
+            SkipCondition::PageSize {
+                min_bytes,
+                max_bytes,
+            } => {
                 assert_eq!(min_bytes, Some(100));
                 assert_eq!(max_bytes, Some(10000));
             }

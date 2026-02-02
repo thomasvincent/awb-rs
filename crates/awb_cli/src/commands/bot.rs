@@ -26,11 +26,14 @@ pub async fn run(
     println!("{}", style("AWB-RS Bot Mode").bold().cyan());
     println!("Wiki: {}", wiki);
     println!("Profile: {}", profile_path.display());
-    println!("Mode: {}", if dry_run {
-        style("DRY-RUN").yellow()
-    } else {
-        style("AUTONOMOUS").green().bold()
-    });
+    println!(
+        "Mode: {}",
+        if dry_run {
+            style("DRY-RUN").yellow()
+        } else {
+            style("AUTONOMOUS").green().bold()
+        }
+    );
     if let Some(max) = max_edits {
         println!("Max edits: {}", max);
     }
@@ -38,12 +41,14 @@ pub async fn run(
 
     // Load profile
     let config_store = TomlConfigStore::new(&profile_path);
-    let profile = config_store.load_profile(&auth_profile)
+    let profile = config_store
+        .load_profile(&auth_profile)
         .context("Failed to load profile. Create one first or use a different auth-profile.")?;
 
     // Get credentials
     let cred_store = InMemoryCredentialStore::new();
-    let password = cred_store.get_password(&auth_profile)
+    let password = cred_store
+        .get_password(&auth_profile)
         .context("No stored credentials found. Run 'login' command first.")?;
 
     // Create client and login
@@ -61,14 +66,18 @@ pub async fn run(
         }
     };
 
-    client.login_bot_password(&username, &password)
+    client
+        .login_bot_password(&username, &password)
         .await
         .context("Login failed")?;
     println!("{}", style("✓").green().bold());
 
     // Fetch CSRF token
     print!("Fetching CSRF token... ");
-    client.fetch_csrf_token().await.context("Failed to fetch CSRF token")?;
+    client
+        .fetch_csrf_token()
+        .await
+        .context("Failed to fetch CSRF token")?;
     println!("{}", style("✓").green().bold());
 
     // Load rules and build engine
@@ -105,8 +114,7 @@ pub async fn run(
     let checkpoint = if let Some(ref path) = checkpoint_path {
         if path.exists() {
             println!("Loading checkpoint from {}...", path.display());
-            Checkpoint::load(path)
-                .context("Failed to load checkpoint")?
+            Checkpoint::load(path).context("Failed to load checkpoint")?
         } else {
             Checkpoint::new()
         }
@@ -116,7 +124,10 @@ pub async fn run(
 
     // Create and run bot
     let mut bot_runner = if checkpoint.next_index() > 0 {
-        println!("Resuming from page {} (checkpoint)", checkpoint.next_index() + 1);
+        println!(
+            "Resuming from page {} (checkpoint)",
+            checkpoint.next_index() + 1
+        );
         BotRunner::with_checkpoint(bot_config, client, engine, pages, checkpoint)
     } else {
         BotRunner::new(bot_config, client, engine, pages)
@@ -142,7 +153,8 @@ pub async fn run(
 
     // Save final checkpoint
     if let Some(path) = checkpoint_path {
-        bot_runner.save_checkpoint(&path)
+        bot_runner
+            .save_checkpoint(&path)
             .context("Failed to save final checkpoint")?;
     }
 
@@ -153,9 +165,11 @@ pub async fn run(
     println!("{}", style("═".repeat(60)).dim());
 
     // Save JSON report
-    let report_path = PathBuf::from(format!("bot-report-{}.json", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
-    std::fs::write(&report_path, report.to_json()?)
-        .context("Failed to save report")?;
+    let report_path = PathBuf::from(format!(
+        "bot-report-{}.json",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    std::fs::write(&report_path, report.to_json()?).context("Failed to save report")?;
     println!("Report saved to: {}", report_path.display());
 
     Ok(())

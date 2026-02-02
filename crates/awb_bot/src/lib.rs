@@ -1,9 +1,9 @@
-pub mod config;
 pub mod bot_runner;
-pub mod report;
 pub mod checkpoint;
+pub mod config;
+pub mod report;
 
-pub use config::BotConfig;
 pub use bot_runner::BotRunner;
-pub use report::{BotReport, PageResult, PageAction};
 pub use checkpoint::Checkpoint;
+pub use config::BotConfig;
+pub use report::{BotReport, PageAction, PageResult};

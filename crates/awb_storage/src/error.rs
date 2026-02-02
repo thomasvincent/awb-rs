@@ -17,13 +17,19 @@ pub enum StorageError {
 }
 
 impl From<serde_json::Error> for StorageError {
-    fn from(e: serde_json::Error) -> Self { Self::Deserialize(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        Self::Deserialize(e.to_string())
+    }
 }
 
 impl From<toml::de::Error> for StorageError {
-    fn from(e: toml::de::Error) -> Self { Self::Deserialize(e.to_string()) }
+    fn from(e: toml::de::Error) -> Self {
+        Self::Deserialize(e.to_string())
+    }
 }
 
 impl From<toml::ser::Error> for StorageError {
-    fn from(e: toml::ser::Error) -> Self { Self::Serialize(e.to_string()) }
+    fn from(e: toml::ser::Error) -> Self {
+        Self::Serialize(e.to_string())
+    }
 }

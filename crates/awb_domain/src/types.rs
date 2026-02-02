@@ -41,7 +41,11 @@ impl Title {
         } else {
             format!("{}:{}", namespace.0, &name) // simplified
         };
-        Self { namespace, name, display }
+        Self {
+            namespace,
+            name,
+            display,
+        }
     }
 }
 
@@ -128,7 +132,10 @@ mod tests {
 
     #[test]
     fn test_protection_level_equality() {
-        assert_eq!(ProtectionLevel::Autoconfirmed, ProtectionLevel::Autoconfirmed);
+        assert_eq!(
+            ProtectionLevel::Autoconfirmed,
+            ProtectionLevel::Autoconfirmed
+        );
         assert_ne!(ProtectionLevel::Autoconfirmed, ProtectionLevel::Sysop);
     }
 

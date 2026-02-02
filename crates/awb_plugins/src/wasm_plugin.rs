@@ -36,7 +36,11 @@ impl WasmPlugin {
     ) -> Result<Self> {
         let path = path.as_ref();
         let wasm_bytes = std::fs::read(path).map_err(|e| {
-            PluginError::LoadFailed(format!("Failed to read WASM file {}: {}", path.display(), e))
+            PluginError::LoadFailed(format!(
+                "Failed to read WASM file {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         Self::from_bytes(name, &wasm_bytes, config)
@@ -80,24 +84,28 @@ impl WasmPlugin {
         let instance = linker.instantiate(&mut store, &self.module)?;
 
         // Get the memory export
-        let memory = instance
-            .get_memory(&mut store, "memory")
-            .ok_or_else(|| PluginError::LoadFailed("WASM module must export 'memory'".to_string()))?;
+        let memory = instance.get_memory(&mut store, "memory").ok_or_else(|| {
+            PluginError::LoadFailed("WASM module must export 'memory'".to_string())
+        })?;
 
         // Get the alloc function (required for passing strings)
         let alloc = instance
             .get_typed_func::<i32, i32>(&mut store, "alloc")
             .map_err(|e| {
-                PluginError::LoadFailed(format!("WASM module must export 'alloc(size: i32) -> i32': {}", e))
+                PluginError::LoadFailed(format!(
+                    "WASM module must export 'alloc(size: i32) -> i32': {}",
+                    e
+                ))
             })?;
 
         // Get the transform function
         let transform = instance
             .get_typed_func::<(i32, i32), i32>(&mut store, "transform")
             .map_err(|e| {
-                PluginError::LoadFailed(
-                    format!("WASM module must export 'transform(ptr: i32, len: i32) -> i32': {}", e),
-                )
+                PluginError::LoadFailed(format!(
+                    "WASM module must export 'transform(ptr: i32, len: i32) -> i32': {}",
+                    e
+                ))
             })?;
 
         // Allocate memory for input string
@@ -106,7 +114,8 @@ impl WasmPlugin {
         let input_ptr = alloc.call(&mut store, input_len)?;
 
         // Write input string to WASM memory
-        memory.write(&mut store, input_ptr as usize, input_bytes)
+        memory
+            .write(&mut store, input_ptr as usize, input_bytes)
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory write failed: {}", e)))?;
 
         // Call the transform function
@@ -116,7 +125,8 @@ impl WasmPlugin {
         // The WASM module should return a pointer to a length-prefixed string
         // Format: [4 bytes length][string data]
         let mut len_bytes = [0u8; 4];
-        memory.read(&store, result_ptr as usize, &mut len_bytes)
+        memory
+            .read(&store, result_ptr as usize, &mut len_bytes)
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory read failed: {}", e)))?;
         let result_len = i32::from_le_bytes(len_bytes) as usize;
 
@@ -126,7 +136,8 @@ impl WasmPlugin {
         }
 
         let mut result_bytes = vec![0u8; result_len];
-        memory.read(&store, (result_ptr + 4) as usize, &mut result_bytes)
+        memory
+            .read(&store, (result_ptr + 4) as usize, &mut result_bytes)
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory read failed: {}", e)))?;
 
         // Convert bytes to string
@@ -135,11 +146,7 @@ impl WasmPlugin {
         // Get remaining fuel to calculate consumption
         if let Ok(remaining) = store.get_fuel() {
             let consumed = self.config.wasm_fuel.saturating_sub(remaining);
-            debug!(
-                "WASM plugin '{}' consumed {} fuel",
-                self.name,
-                consumed
-            );
+            debug!("WASM plugin '{}' consumed {} fuel", self.name, consumed);
         }
 
         Ok(result)
@@ -241,8 +248,9 @@ mod tests {
     #[test]
     fn test_wasm_plugin_uppercase() {
         let wasm_bytes = create_test_wasm_uppercase();
-        let plugin = WasmPlugin::from_bytes("test_uppercase", &wasm_bytes, SandboxConfig::default())
-            .unwrap();
+        let plugin =
+            WasmPlugin::from_bytes("test_uppercase", &wasm_bytes, SandboxConfig::default())
+                .unwrap();
 
         assert_eq!(plugin.name(), "test_uppercase");
         assert_eq!(plugin.plugin_type(), PluginType::Wasm);

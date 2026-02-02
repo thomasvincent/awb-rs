@@ -1,7 +1,7 @@
 use crate::error::StorageError;
 use awb_domain::profile::Profile;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
@@ -85,7 +85,10 @@ impl TomlConfigStore {
 
     pub fn load_profile(&self, id: &str) -> Result<Profile, StorageError> {
         let config = self.load_file()?;
-        config.profiles.get(id).cloned()
+        config
+            .profiles
+            .get(id)
+            .cloned()
             .ok_or_else(|| StorageError::NotFound(id.to_string()))
     }
 
@@ -154,14 +157,21 @@ mod tests {
     #[test]
     fn test_save_creates_parent_directories() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("nested").join("dir").join("config.toml");
+        let config_path = temp_dir
+            .path()
+            .join("nested")
+            .join("dir")
+            .join("config.toml");
         let store = TomlConfigStore::new(&config_path);
 
         let prefs = Preferences::default();
 
         let result = store.save_preferences(&prefs);
         assert!(result.is_ok(), "Should create parent directories");
-        assert!(config_path.parent().unwrap().exists(), "Parent directory should exist");
+        assert!(
+            config_path.parent().unwrap().exists(),
+            "Parent directory should exist"
+        );
         assert!(config_path.exists(), "Config file should exist");
     }
 
@@ -172,7 +182,10 @@ mod tests {
         let store = TomlConfigStore::new(&config_path);
 
         let result = store.load_preferences();
-        assert!(result.is_ok(), "Should return default preferences for nonexistent file");
+        assert!(
+            result.is_ok(),
+            "Should return default preferences for nonexistent file"
+        );
 
         let prefs = result.unwrap();
         assert_eq!(prefs.default_profile, "enwiki");
@@ -180,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_profile_save_and_load() {
-        use awb_domain::profile::{Profile, ThrottlePolicy, AuthMethod};
+        use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};
         use awb_domain::types::Namespace;
         use std::collections::HashSet;
         use std::time::Duration;
@@ -196,7 +209,9 @@ mod tests {
             id: "testwiki".to_string(),
             name: "Test Wiki".to_string(),
             api_url: url::Url::parse("https://test.wikipedia.org/w/api.php").unwrap(),
-            auth_method: AuthMethod::BotPassword { username: "TestBot".to_string() },
+            auth_method: AuthMethod::BotPassword {
+                username: "TestBot".to_string(),
+            },
             default_namespaces,
             throttle_policy: ThrottlePolicy {
                 min_edit_interval: Duration::from_secs(5),
@@ -215,7 +230,10 @@ mod tests {
 
         assert_eq!(loaded_profile.id, "testwiki");
         assert_eq!(loaded_profile.name, "Test Wiki");
-        assert_eq!(loaded_profile.api_url.as_str(), "https://test.wikipedia.org/w/api.php");
+        assert_eq!(
+            loaded_profile.api_url.as_str(),
+            "https://test.wikipedia.org/w/api.php"
+        );
     }
 
     #[test]
@@ -225,7 +243,10 @@ mod tests {
         let store = TomlConfigStore::new(&config_path);
 
         let result = store.load_profile("nonexistent");
-        assert!(result.is_err(), "Should return error for nonexistent profile");
+        assert!(
+            result.is_err(),
+            "Should return error for nonexistent profile"
+        );
 
         match result {
             Err(StorageError::NotFound(id)) => assert_eq!(id, "nonexistent"),
@@ -235,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_list_profiles() {
-        use awb_domain::profile::{Profile, ThrottlePolicy, AuthMethod};
+        use awb_domain::profile::{AuthMethod, Profile, ThrottlePolicy};
         use awb_domain::types::Namespace;
         use std::collections::HashSet;
         use std::time::Duration;
@@ -252,7 +273,9 @@ mod tests {
             id: "wiki1".to_string(),
             name: "Wiki 1".to_string(),
             api_url: url::Url::parse("https://wiki1.org/w/api.php").unwrap(),
-            auth_method: AuthMethod::BotPassword { username: "Bot1".to_string() },
+            auth_method: AuthMethod::BotPassword {
+                username: "Bot1".to_string(),
+            },
             default_namespaces: default_namespaces.clone(),
             throttle_policy: ThrottlePolicy {
                 min_edit_interval: Duration::from_secs(5),
@@ -266,7 +289,9 @@ mod tests {
             id: "wiki2".to_string(),
             name: "Wiki 2".to_string(),
             api_url: url::Url::parse("https://wiki2.org/w/api.php").unwrap(),
-            auth_method: AuthMethod::BotPassword { username: "Bot2".to_string() },
+            auth_method: AuthMethod::BotPassword {
+                username: "Bot2".to_string(),
+            },
             default_namespaces: default_namespaces.clone(),
             throttle_policy: ThrottlePolicy {
                 min_edit_interval: Duration::from_secs(5),

@@ -1,13 +1,13 @@
 pub mod c_api;
 
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use awb_domain::types::*;
 use awb_domain::rules::RuleSet;
-use awb_engine::transform::TransformEngine;
-use awb_engine::general_fixes::FixRegistry;
+use awb_domain::types::*;
 use awb_engine::diff_engine;
+use awb_engine::general_fixes::FixRegistry;
+use awb_engine::transform::TransformEngine;
 use secrecy::SecretString;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 // FFI-safe types
 #[derive(Clone)]
@@ -65,35 +65,45 @@ lazy_static::lazy_static! {
 }
 
 // UniFFI exported functions
-pub fn create_session(wiki_url: String, username: String, password: String) -> Result<SessionHandle, FfiError> {
+pub fn create_session(
+    wiki_url: String,
+    username: String,
+    password: String,
+) -> Result<SessionHandle, FfiError> {
     // Validate that wiki_url is not empty
     if wiki_url.trim().is_empty() {
         return Err(FfiError::ParseError("wiki_url cannot be empty".to_string()));
     }
 
-    let mut sessions = SESSIONS.lock()
+    let mut sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let mut next_id = NEXT_SESSION_ID.lock()
+    let mut next_id = NEXT_SESSION_ID
+        .lock()
         .map_err(|_| FfiError::InternalError("Session ID lock poisoned".to_string()))?;
 
     let id = *next_id;
     *next_id += 1;
 
-    sessions.insert(id, Session {
-        wiki_url,
-        username,
-        password: Some(SecretString::new(password.into())),
-    });
+    sessions.insert(
+        id,
+        Session {
+            wiki_url,
+            username,
+            password: Some(SecretString::new(password.into())),
+        },
+    );
 
     Ok(SessionHandle { id })
 }
 
 pub fn login(handle: SessionHandle) -> Result<(), FfiError> {
-    let mut sessions = SESSIONS.lock()
+    let mut sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let session = sessions
-        .get_mut(&handle.id)
-        .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
+    let session = sessions.get_mut(&handle.id).ok_or(FfiError::InternalError(
+        "Invalid session handle".to_string(),
+    ))?;
 
     // TODO: Implement actual authentication via awb_mw_api
     // Use password here: let _password = session.password.as_ref().map(|p| p.expose_secret());
@@ -109,11 +119,12 @@ pub fn fetch_list(
     source: String,
     query: String,
 ) -> Result<Vec<String>, FfiError> {
-    let sessions = SESSIONS.lock()
+    let sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions
-        .get(&handle.id)
-        .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
+        "Invalid session handle".to_string(),
+    ))?;
 
     // TODO: Implement actual list fetching via awb_mw_api
     // For now, return a mock list
@@ -125,11 +136,12 @@ pub fn fetch_list(
 }
 
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {
-    let sessions = SESSIONS.lock()
+    let sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions
-        .get(&handle.id)
-        .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
+        "Invalid session handle".to_string(),
+    ))?;
 
     // TODO: Implement actual page fetching via awb_mw_api
     // For now, return a mock page
@@ -149,11 +161,12 @@ pub fn apply_rules(
     content: String,
     rules_json: String,
 ) -> Result<TransformResult, FfiError> {
-    let sessions = SESSIONS.lock()
+    let sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions
-        .get(&handle.id)
-        .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
+        "Invalid session handle".to_string(),
+    ))?;
 
     // Parse rules from JSON
     let rule_set: RuleSet = serde_json::from_str(&rules_json)
@@ -199,11 +212,12 @@ pub fn save_page(
     content: String,
     summary: String,
 ) -> Result<(), FfiError> {
-    let sessions = SESSIONS.lock()
+    let sessions = SESSIONS
+        .lock()
         .map_err(|_| FfiError::InternalError("Session lock poisoned".to_string()))?;
-    let _session = sessions
-        .get(&handle.id)
-        .ok_or(FfiError::InternalError("Invalid session handle".to_string()))?;
+    let _session = sessions.get(&handle.id).ok_or(FfiError::InternalError(
+        "Invalid session handle".to_string(),
+    ))?;
 
     // TODO: Implement actual page saving via awb_mw_api
     // For now, just validate inputs
@@ -236,14 +250,28 @@ fn format_diff_as_html(diff_ops: &[awb_domain::diff::DiffOp]) -> String {
                 html.push_str(&format!("<span class='equal'>{}</span>", html_escape(text)));
             }
             DiffOp::Delete { text, .. } => {
-                html.push_str(&format!("<span class='delete'>{}</span>", html_escape(text)));
+                html.push_str(&format!(
+                    "<span class='delete'>{}</span>",
+                    html_escape(text)
+                ));
             }
             DiffOp::Insert { text, .. } => {
-                html.push_str(&format!("<span class='insert'>{}</span>", html_escape(text)));
+                html.push_str(&format!(
+                    "<span class='insert'>{}</span>",
+                    html_escape(text)
+                ));
             }
-            DiffOp::Replace { old_text, new_text, .. } => {
-                html.push_str(&format!("<span class='delete'>{}</span>", html_escape(old_text)));
-                html.push_str(&format!("<span class='insert'>{}</span>", html_escape(new_text)));
+            DiffOp::Replace {
+                old_text, new_text, ..
+            } => {
+                html.push_str(&format!(
+                    "<span class='delete'>{}</span>",
+                    html_escape(old_text)
+                ));
+                html.push_str(&format!(
+                    "<span class='insert'>{}</span>",
+                    html_escape(new_text)
+                ));
             }
         }
     }
@@ -273,7 +301,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(handle.id > 0);
     }
 
@@ -283,7 +312,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
         let result = login(handle);
         assert!(result.is_ok());
     }
@@ -294,7 +324,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
         let result = fetch_list(handle, "category".to_string(), "Test".to_string());
         assert!(result.is_ok());
         let list = result.unwrap();
@@ -307,7 +338,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
         let result = get_page(handle, "Test Page".to_string());
         assert!(result.is_ok());
         let page = result.unwrap();
@@ -337,7 +369,8 @@ mod tests {
             "https://en.wikipedia.org/w/api.php".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(handle.id > 0, "Handle ID should be positive");
     }
@@ -348,24 +381,22 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user1".to_string(),
             "pass1".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let handle2 = create_session(
             "https://en.wikipedia.org".to_string(),
             "user2".to_string(),
             "pass2".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(handle2.id > handle1.id, "Session IDs should increment");
     }
 
     #[test]
     fn test_create_session_with_empty_url() {
-        let result = create_session(
-            "".to_string(),
-            "user".to_string(),
-            "pass".to_string(),
-        );
+        let result = create_session("".to_string(), "user".to_string(), "pass".to_string());
 
         // Empty URL should now be rejected
         assert!(result.is_err());
@@ -401,11 +432,7 @@ mod tests {
 
     #[test]
     fn test_create_session_with_all_empty_strings() {
-        let result = create_session(
-            "".to_string(),
-            "".to_string(),
-            "".to_string(),
-        );
+        let result = create_session("".to_string(), "".to_string(), "".to_string());
 
         // Empty wiki_url should be rejected
         assert!(result.is_err(), "Should reject empty wiki_url");
@@ -421,7 +448,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = login(handle);
         assert!(result.is_ok(), "Login should succeed with valid handle");
@@ -433,7 +461,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = save_page(
             handle,
@@ -455,7 +484,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = save_page(
             handle,
@@ -477,7 +507,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = save_page(
             handle,
@@ -499,7 +530,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = save_page(
             handle,
@@ -582,7 +614,8 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let page = get_page(handle, "Test".to_string()).unwrap();
 
@@ -601,15 +634,13 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let rules_json = r#"{"rules":[]}"#;
 
-        let result = apply_rules(
-            handle,
-            "Test content".to_string(),
-            rules_json.to_string(),
-        ).unwrap();
+        let result =
+            apply_rules(handle, "Test content".to_string(), rules_json.to_string()).unwrap();
 
         assert!(!result.new_wikitext.is_empty());
         assert!(!result.summary.is_empty());
@@ -622,15 +653,12 @@ mod tests {
             "https://en.wikipedia.org".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let invalid_json = "not valid json";
 
-        let result = apply_rules(
-            handle,
-            "content".to_string(),
-            invalid_json.to_string(),
-        );
+        let result = apply_rules(handle, "content".to_string(), invalid_json.to_string());
 
         assert!(result.is_err());
         match result {

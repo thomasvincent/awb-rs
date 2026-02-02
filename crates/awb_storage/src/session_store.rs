@@ -1,6 +1,6 @@
 use crate::error::StorageError;
-use awb_domain::session::SessionState;
 use async_trait::async_trait;
+use awb_domain::session::SessionState;
 use std::path::PathBuf;
 
 #[async_trait]
@@ -24,16 +24,21 @@ impl JsonSessionStore {
     /// Validate session ID to prevent path traversal attacks
     fn validate_session_id(id: &str) -> Result<(), StorageError> {
         // Only allow alphanumeric, hyphens, underscores, and periods
-        if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
-            return Err(StorageError::InvalidSessionId(
-                format!("Session ID '{}' contains invalid characters. Only alphanumeric, hyphens, underscores, and periods are allowed.", id)
-            ));
+        if !id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
+            return Err(StorageError::InvalidSessionId(format!(
+                "Session ID '{}' contains invalid characters. Only alphanumeric, hyphens, underscores, and periods are allowed.",
+                id
+            )));
         }
         // Prevent empty or hidden files
         if id.is_empty() || id.starts_with('.') {
-            return Err(StorageError::InvalidSessionId(
-                format!("Session ID '{}' is invalid (empty or starts with '.')", id)
-            ));
+            return Err(StorageError::InvalidSessionId(format!(
+                "Session ID '{}' is invalid (empty or starts with '.')",
+                id
+            )));
         }
         Ok(())
     }
@@ -77,14 +82,19 @@ impl SessionStore for JsonSessionStore {
         let data = tokio::fs::read_to_string(&path).await?;
         let session: SessionState = serde_json::from_str(&data)?;
         if session.schema_version != 1 {
-            return Err(StorageError::SchemaMismatch { found: session.schema_version, expected: 1 });
+            return Err(StorageError::SchemaMismatch {
+                found: session.schema_version,
+                expected: 1,
+            });
         }
         Ok(session)
     }
 
     async fn list_sessions(&self) -> Result<Vec<String>, StorageError> {
         let mut sessions = Vec::new();
-        if !self.dir.exists() { return Ok(sessions); }
+        if !self.dir.exists() {
+            return Ok(sessions);
+        }
         let mut entries = tokio::fs::read_dir(&self.dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();

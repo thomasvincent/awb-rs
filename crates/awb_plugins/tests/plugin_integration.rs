@@ -72,7 +72,8 @@ fn test_lua_plugin_with_mediawiki_helpers() {
         end
     "#;
 
-    let plugin = LuaPlugin::from_string("mediawiki_test", script, SandboxConfig::default()).unwrap();
+    let plugin =
+        LuaPlugin::from_string("mediawiki_test", script, SandboxConfig::default()).unwrap();
     let result = plugin.transform("test").unwrap();
 
     assert!(result.contains("(has title helper)"));
@@ -90,7 +91,8 @@ fn test_lua_plugin_sandbox_blocks_dangerous_functions() {
         end
     "#;
 
-    let plugin = LuaPlugin::from_string("dangerous_os", script_os, SandboxConfig::default()).unwrap();
+    let plugin =
+        LuaPlugin::from_string("dangerous_os", script_os, SandboxConfig::default()).unwrap();
     let result = plugin.transform("test");
     assert!(result.is_err(), "os.execute should be blocked by sandbox");
 
@@ -102,7 +104,8 @@ fn test_lua_plugin_sandbox_blocks_dangerous_functions() {
         end
     "#;
 
-    let plugin = LuaPlugin::from_string("dangerous_io", script_io, SandboxConfig::default()).unwrap();
+    let plugin =
+        LuaPlugin::from_string("dangerous_io", script_io, SandboxConfig::default()).unwrap();
     let result = plugin.transform("test");
     assert!(result.is_err(), "io.open should be blocked by sandbox");
 
@@ -114,7 +117,8 @@ fn test_lua_plugin_sandbox_blocks_dangerous_functions() {
         end
     "#;
 
-    let plugin = LuaPlugin::from_string("dangerous_load", script_load, SandboxConfig::default()).unwrap();
+    let plugin =
+        LuaPlugin::from_string("dangerous_load", script_load, SandboxConfig::default()).unwrap();
     let result = plugin.transform("test");
     assert!(result.is_err(), "load should be blocked by sandbox");
 
@@ -126,7 +130,9 @@ fn test_lua_plugin_sandbox_blocks_dangerous_functions() {
         end
     "#;
 
-    let plugin = LuaPlugin::from_string("dangerous_dofile", script_dofile, SandboxConfig::default()).unwrap();
+    let plugin =
+        LuaPlugin::from_string("dangerous_dofile", script_dofile, SandboxConfig::default())
+            .unwrap();
     let result = plugin.transform("test");
     assert!(result.is_err(), "dofile should be blocked by sandbox");
 }
@@ -158,8 +164,11 @@ fn test_lua_plugin_timeout() {
     if let Err(e) = result {
         let error_msg = format!("{:?}", e);
         assert!(
-            matches!(e, PluginError::Timeout { .. }) || error_msg.contains("timeout") || error_msg.contains("cancelled"),
-            "Expected timeout-related error, got: {:?}", e
+            matches!(e, PluginError::Timeout { .. })
+                || error_msg.contains("timeout")
+                || error_msg.contains("cancelled"),
+            "Expected timeout-related error, got: {:?}",
+            e
         );
     }
 }
@@ -217,8 +226,12 @@ fn test_plugin_manager_enable_disable() {
     "#;
 
     let mut manager = PluginManager::new();
-    manager.add_plugin(Box::new(LuaPlugin::from_string("plugin1", script1, SandboxConfig::default()).unwrap()));
-    manager.add_plugin(Box::new(LuaPlugin::from_string("plugin2", script2, SandboxConfig::default()).unwrap()));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("plugin1", script1, SandboxConfig::default()).unwrap(),
+    ));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("plugin2", script2, SandboxConfig::default()).unwrap(),
+    ));
 
     // All plugins enabled by default
     let result = manager.apply_all("test").unwrap();
@@ -244,7 +257,9 @@ fn test_plugin_manager_apply_specific_plugin() {
     "#;
 
     let mut manager = PluginManager::new();
-    manager.add_plugin(Box::new(LuaPlugin::from_string("uppercase", script, SandboxConfig::default()).unwrap()));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("uppercase", script, SandboxConfig::default()).unwrap(),
+    ));
 
     let result = manager.apply_plugin("uppercase", "hello").unwrap();
     assert_eq!(result, "HELLO");
@@ -258,9 +273,30 @@ fn test_plugin_manager_apply_specific_plugin() {
 fn test_plugin_manager_plugin_names() {
     let mut manager = PluginManager::new();
 
-    manager.add_plugin(Box::new(LuaPlugin::from_string("plugin1", "function transform(t) return t end", SandboxConfig::default()).unwrap()));
-    manager.add_plugin(Box::new(LuaPlugin::from_string("plugin2", "function transform(t) return t end", SandboxConfig::default()).unwrap()));
-    manager.add_plugin(Box::new(LuaPlugin::from_string("plugin3", "function transform(t) return t end", SandboxConfig::default()).unwrap()));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string(
+            "plugin1",
+            "function transform(t) return t end",
+            SandboxConfig::default(),
+        )
+        .unwrap(),
+    ));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string(
+            "plugin2",
+            "function transform(t) return t end",
+            SandboxConfig::default(),
+        )
+        .unwrap(),
+    ));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string(
+            "plugin3",
+            "function transform(t) return t end",
+            SandboxConfig::default(),
+        )
+        .unwrap(),
+    ));
 
     let names = manager.plugin_names();
     assert_eq!(names.len(), 3);
@@ -272,7 +308,14 @@ fn test_plugin_manager_plugin_names() {
 #[test]
 fn test_plugin_manager_remove_plugin() {
     let mut manager = PluginManager::new();
-    manager.add_plugin(Box::new(LuaPlugin::from_string("test", "function transform(t) return t end", SandboxConfig::default()).unwrap()));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string(
+            "test",
+            "function transform(t) return t end",
+            SandboxConfig::default(),
+        )
+        .unwrap(),
+    ));
 
     assert_eq!(manager.plugin_count(), 1);
 
@@ -306,9 +349,15 @@ fn test_plugin_error_handling_continues_with_other_plugins() {
     "#;
 
     let mut manager = PluginManager::new();
-    manager.add_plugin(Box::new(LuaPlugin::from_string("good1", good_script, SandboxConfig::default()).unwrap()));
-    manager.add_plugin(Box::new(LuaPlugin::from_string("bad", bad_script, SandboxConfig::default()).unwrap()));
-    manager.add_plugin(Box::new(LuaPlugin::from_string("good2", another_good_script, SandboxConfig::default()).unwrap()));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("good1", good_script, SandboxConfig::default()).unwrap(),
+    ));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("bad", bad_script, SandboxConfig::default()).unwrap(),
+    ));
+    manager.add_plugin(Box::new(
+        LuaPlugin::from_string("good2", another_good_script, SandboxConfig::default()).unwrap(),
+    ));
 
     // Should continue processing even when one plugin fails
     let result = manager.apply_all("test").unwrap();
@@ -338,7 +387,10 @@ fn test_lua_plugin_metadata_extraction() {
     assert_eq!(plugin.name(), "test_plugin");
     // Version is not exposed in the current API
     // Description is auto-generated from the name if not provided via global
-    assert!(plugin.description().contains("test_plugin") || plugin.description().contains("A test plugin"));
+    assert!(
+        plugin.description().contains("test_plugin")
+            || plugin.description().contains("A test plugin")
+    );
 }
 
 #[test]
