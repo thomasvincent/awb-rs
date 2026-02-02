@@ -149,8 +149,8 @@ pub async fn authorize(
     println!("✓ OAuth 2.0 token obtained and saved to profile '{}'", profile);
     println!("✓ Profile saved to {}", profile_path);
 
-    if token.expires_in.is_some() {
-        println!("ℹ Token will expire in {} seconds", token.expires_in.unwrap());
+    if let Some(expires) = token.expires_in {
+        println!("ℹ Token will expire in {} seconds", expires);
     }
 
     Ok(())

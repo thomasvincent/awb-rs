@@ -58,7 +58,7 @@ impl TransformEngine {
                         let re = regex::RegexBuilder::new(&regex::escape(find))
                             .case_insensitive(true)
                             .build()
-                            .unwrap();
+                            .expect("known-valid escaped regex");
                         re.replace_all(&text, replace.as_str()).into_owned()
                     };
                     (new, *id, comment)

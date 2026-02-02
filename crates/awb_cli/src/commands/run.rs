@@ -81,7 +81,7 @@ pub async fn run(
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
+            .expect("valid progress template")
             .progress_chars("#>-")
     );
 
