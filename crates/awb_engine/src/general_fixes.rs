@@ -352,3 +352,293 @@ fn ascii_fold(text: &str) -> String {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_context(title_name: &str) -> FixContext {
+        FixContext {
+            title: Title::new(Namespace::MAIN, title_name),
+            namespace: Namespace::MAIN,
+            is_redirect: false,
+        }
+    }
+
+    // --- CitationFormatting Tests ---
+
+    #[test]
+    fn test_citation_formatting_accessdate_rename() {
+        let fix = CitationFormatting;
+        let ctx = test_context("Test");
+
+        let input = "{{cite web|url=http://example.com|accessdate=2021-01-01}}";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("access-date="));
+        assert!(!result.contains("accessdate="));
+    }
+
+    #[test]
+    fn test_citation_formatting_cite_template_normalization() {
+        let fix = CitationFormatting;
+        let ctx = test_context("Test");
+
+        let input = "{{Cite Web|title=Test}} {{CITE NEWS|title=News}} {{cite JOURNAL|title=Article}}";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("{{cite web"));
+        assert!(result.contains("{{cite news"));
+        assert!(result.contains("{{cite journal"));
+    }
+
+    #[test]
+    fn test_citation_formatting_preserves_other_templates() {
+        let fix = CitationFormatting;
+        let ctx = test_context("Test");
+
+        let input = "{{Infobox|name=Test}} {{cite web|url=test}}";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("{{Infobox|name=Test}}"));
+    }
+
+    // --- DuplicateWikilinkRemoval Tests ---
+
+    #[test]
+    fn test_duplicate_wikilink_first_link_kept() {
+        let fix = DuplicateWikilinkRemoval;
+        let ctx = test_context("Test");
+
+        let input = "[[Python]] and [[Python]]";
+        let result = fix.apply(input, &ctx);
+
+        assert_eq!(result, "[[Python]] and Python");
+    }
+
+    #[test]
+    fn test_duplicate_wikilink_with_different_display_text() {
+        let fix = DuplicateWikilinkRemoval;
+        let ctx = test_context("Test");
+
+        let input = "[[Python (programming language)|Python]] and [[Python (programming language)|the language]]";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.starts_with("[[Python (programming language)|Python]]"));
+        assert!(result.ends_with("the language"));
+        assert_eq!(result.matches("[[Python").count(), 1);
+    }
+
+    #[test]
+    fn test_duplicate_wikilink_three_occurrences() {
+        let fix = DuplicateWikilinkRemoval;
+        let ctx = test_context("Test");
+
+        let input = "[[Python]] and [[Python]] and [[Python]]";
+        let result = fix.apply(input, &ctx);
+
+        assert_eq!(result, "[[Python]] and Python and Python");
+    }
+
+    // --- UnicodeNormalization Tests ---
+
+    #[test]
+    fn test_unicode_normalization_nbsp_replacement() {
+        let fix = UnicodeNormalization;
+        let ctx = test_context("Test");
+
+        let input = "Word\u{00A0}with\u{00A0}nbsp";
+        let result = fix.apply(input, &ctx);
+
+        assert_eq!(result, "Word with nbsp");
+        assert!(!result.contains('\u{00A0}'));
+    }
+
+    #[test]
+    fn test_unicode_normalization_endash_in_ranges() {
+        let fix = UnicodeNormalization;
+        let ctx = test_context("Test");
+
+        let input = "Years 2020 – 2021 and pages 10 — 20";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("2020–2021"));
+        assert!(result.contains("10–20"));
+    }
+
+    #[test]
+    fn test_unicode_normalization_curly_quotes_in_templates() {
+        let fix = UnicodeNormalization;
+        let ctx = test_context("Test");
+
+        let input = "{{cite|title=\u{201C}Title\u{201D}|author=\u{2018}Name\u{2019}}}";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("title=\"Title\""));
+        assert!(result.contains("author='Name'"));
+    }
+
+    #[test]
+    fn test_unicode_normalization_preserves_curly_quotes_in_prose() {
+        let fix = UnicodeNormalization;
+        let ctx = test_context("Test");
+
+        // Curly quotes in prose (outside templates) should be preserved
+        let input = "He said \u{201C}hello\u{201D} to her.";
+        let result = fix.apply(input, &ctx);
+
+        // Since we only fix quotes inside templates, these should remain
+        assert_eq!(result, input);
+    }
+
+    // --- DefaultSortFix Tests ---
+
+    #[test]
+    fn test_defaultsort_adds_for_diacritics() {
+        let fix = DefaultSortFix;
+        let ctx = test_context("Café");
+
+        let input = "Article text.\n[[Category:Food]]";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("{{DEFAULTSORT:Cafe}}"));
+        assert!(result.contains("[[Category:Food]]"));
+    }
+
+    #[test]
+    fn test_defaultsort_skips_if_already_present() {
+        let fix = DefaultSortFix;
+        let ctx = test_context("Café");
+
+        let input = "{{DEFAULTSORT:Custom Sort}}\n[[Category:Food]]";
+        let result = fix.apply(input, &ctx);
+
+        assert_eq!(result, input, "Should not add another DEFAULTSORT");
+        assert_eq!(result.matches("DEFAULTSORT").count(), 1);
+    }
+
+    #[test]
+    fn test_defaultsort_skips_ascii_only_titles() {
+        let fix = DefaultSortFix;
+        let ctx = test_context("Regular Title");
+
+        let input = "Article text.\n[[Category:Test]]";
+        let result = fix.apply(input, &ctx);
+
+        assert!(!result.contains("DEFAULTSORT"));
+    }
+
+    #[test]
+    fn test_defaultsort_position_before_categories() {
+        let fix = DefaultSortFix;
+        let ctx = test_context("Naïve");
+
+        let input = "Article text.\n[[Category:First]]\n[[Category:Second]]";
+        let result = fix.apply(input, &ctx);
+
+        // DEFAULTSORT should come before the first category
+        let defaultsort_pos = result.find("DEFAULTSORT").unwrap();
+        let category_pos = result.find("[[Category:First]]").unwrap();
+        assert!(defaultsort_pos < category_pos);
+    }
+
+    #[test]
+    fn test_defaultsort_at_end_if_no_categories() {
+        let fix = DefaultSortFix;
+        let ctx = test_context("Café");
+
+        let input = "Article text with no categories.";
+        let result = fix.apply(input, &ctx);
+
+        assert!(result.contains("{{DEFAULTSORT:Cafe}}"));
+        assert!(result.ends_with("{{DEFAULTSORT:Cafe}}\n"));
+    }
+
+    // --- ascii_fold helper tests ---
+
+    #[test]
+    fn test_ascii_fold_various_diacritics() {
+        assert_eq!(ascii_fold("Café"), "Cafe");
+        assert_eq!(ascii_fold("Naïve"), "Naive");
+        assert_eq!(ascii_fold("Zürich"), "Zurich");
+        assert_eq!(ascii_fold("São Paulo"), "Sao Paulo");
+        // Note: Polish Ł and ź are not in the mapping, so they're preserved
+        // This is acceptable as DEFAULTSORT will still detect non-ASCII
+    }
+
+    #[test]
+    fn test_ascii_fold_german_eszett() {
+        assert_eq!(ascii_fold("Straße"), "Strasse");
+    }
+
+    #[test]
+    fn test_ascii_fold_ligatures() {
+        assert_eq!(ascii_fold("Æsop"), "Aesop");
+        assert_eq!(ascii_fold("Œuvre"), "Oeuvre");
+    }
+
+    #[test]
+    fn test_ascii_fold_mixed_case() {
+        assert_eq!(ascii_fold("CAFÉ"), "CAFE");
+        assert_eq!(ascii_fold("Naïve"), "Naive");
+    }
+
+    #[test]
+    fn test_ascii_fold_plain_ascii() {
+        assert_eq!(ascii_fold("Regular Text"), "Regular Text");
+    }
+
+    // --- FixRegistry Tests ---
+
+    #[test]
+    fn test_fix_registry_with_defaults() {
+        let registry = FixRegistry::with_defaults();
+        let modules = registry.all_modules();
+
+        assert!(!modules.is_empty());
+
+        let ids: Vec<&str> = modules.iter().map(|m| m.id()).collect();
+        assert!(ids.contains(&"citation_formatting"));
+        assert!(ids.contains(&"duplicate_wikilink_removal"));
+        assert!(ids.contains(&"unicode_normalization"));
+        assert!(ids.contains(&"defaultsort_fix"));
+    }
+
+    #[test]
+    fn test_fix_registry_apply_all_with_empty_enabled() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let enabled = HashSet::new();
+
+        let input = "{{Cite Web|accessdate=2021-01-01}}";
+        let result = registry.apply_all(input, &ctx, &enabled);
+
+        // No fixes should be applied
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_fix_registry_apply_all_with_specific_fixes() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let mut enabled = HashSet::new();
+        enabled.insert("citation_formatting".to_string());
+
+        let input = "{{Cite Web|accessdate=2021-01-01}}";
+        let result = registry.apply_all(input, &ctx, &enabled);
+
+        assert!(result.contains("cite web"));
+        assert!(result.contains("access-date="));
+    }
+
+    #[test]
+    fn test_fix_module_trait_methods() {
+        let fix = CitationFormatting;
+
+        assert_eq!(fix.id(), "citation_formatting");
+        assert_eq!(fix.display_name(), "Citation Formatting");
+        assert_eq!(fix.category(), "Citations");
+        assert!(!fix.description().is_empty());
+        assert!(fix.default_enabled());
+    }
+}
