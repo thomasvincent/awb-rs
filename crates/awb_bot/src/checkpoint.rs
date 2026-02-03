@@ -51,10 +51,17 @@ impl Checkpoint {
         }
     }
 
-    /// Save checkpoint to file
+    /// Save checkpoint to file atomically (temp file + rename).
+    /// This ensures a crash mid-write never leaves a corrupt checkpoint.
     pub fn save(&self, path: &Path) -> Result<(), CheckpointError> {
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, json)?;
+        let tmp_path = path.with_extension("tmp");
+        std::fs::write(&tmp_path, &json)?;
+        std::fs::rename(&tmp_path, path).map_err(|e| {
+            // Clean up temp file on rename failure
+            let _ = std::fs::remove_file(&tmp_path);
+            e
+        })?;
         Ok(())
     }
 

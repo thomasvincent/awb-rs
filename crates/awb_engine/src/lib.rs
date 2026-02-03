@@ -1,7 +1,10 @@
+pub mod bot_policy;
 pub mod category;
 pub mod diff_engine;
 pub mod fix_config;
 pub mod general_fixes;
+pub mod masking;
+pub mod namespace_util;
 pub mod review;
 pub mod skip;
 pub mod transform;
