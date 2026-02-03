@@ -12,47 +12,50 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use url::Url;
 
-pub async fn run(
-    wiki: Url,
-    profile_path: PathBuf,
-    max_edits: Option<u32>,
-    dry_run: bool,
-    checkpoint_path: Option<PathBuf>,
-    auth_profile: String,
-    skip_no_change: bool,
-    skip_on_warning: bool,
-    log_every_n: u32,
-) -> Result<()> {
+/// Arguments for the bot run command
+pub struct BotRunArgs {
+    pub wiki: Url,
+    pub profile_path: PathBuf,
+    pub max_edits: Option<u32>,
+    pub dry_run: bool,
+    pub checkpoint_path: Option<PathBuf>,
+    pub auth_profile: String,
+    pub skip_no_change: bool,
+    pub skip_on_warning: bool,
+    pub log_every_n: u32,
+}
+
+pub async fn run(args: BotRunArgs) -> Result<()> {
     println!("{}", style("AWB-RS Bot Mode").bold().cyan());
-    println!("Wiki: {}", wiki);
-    println!("Profile: {}", profile_path.display());
+    println!("Wiki: {}", args.wiki);
+    println!("Profile: {}", args.profile_path.display());
     println!(
         "Mode: {}",
-        if dry_run {
+        if args.dry_run {
             style("DRY-RUN").yellow()
         } else {
             style("AUTONOMOUS").green().bold()
         }
     );
-    if let Some(max) = max_edits {
+    if let Some(max) = args.max_edits {
         println!("Max edits: {}", max);
     }
     println!();
 
     // Load profile
-    let config_store = TomlConfigStore::new(&profile_path);
+    let config_store = TomlConfigStore::new(&args.profile_path);
     let profile = config_store
-        .load_profile(&auth_profile)
+        .load_profile(&args.auth_profile)
         .context("Failed to load profile. Create one first or use a different auth-profile.")?;
 
     // Get credentials
     let cred_store = InMemoryCredentialStore::new();
     let password = cred_store
-        .get_password(&auth_profile)
+        .get_password(&args.auth_profile)
         .context("No stored credentials found. Run 'login' command first.")?;
 
     // Create client and login
-    let client = ReqwestMwClient::new(wiki.clone(), profile.throttle_policy.clone())
+    let client = ReqwestMwClient::new(args.wiki.clone(), profile.throttle_policy.clone())
         .context("Failed to create HTTP client")?;
 
     print!("Logging in... ");
@@ -101,17 +104,17 @@ pub async fn run(
 
     // Configure bot
     let mut bot_config = BotConfig::new()
-        .with_skip_no_change(skip_no_change)
-        .with_skip_on_warning(skip_on_warning)
-        .with_log_every_n(log_every_n)
-        .with_dry_run(dry_run);
+        .with_skip_no_change(args.skip_no_change)
+        .with_skip_on_warning(args.skip_on_warning)
+        .with_log_every_n(args.log_every_n)
+        .with_dry_run(args.dry_run);
 
-    if let Some(max) = max_edits {
+    if let Some(max) = args.max_edits {
         bot_config = bot_config.with_max_edits(max);
     }
 
     // Load or create checkpoint
-    let checkpoint = if let Some(ref path) = checkpoint_path {
+    let checkpoint = if let Some(ref path) = args.checkpoint_path {
         if path.exists() {
             println!("Loading checkpoint from {}...", path.display());
             Checkpoint::load(path).context("Failed to load checkpoint")?
@@ -142,7 +145,7 @@ pub async fn run(
             eprintln!("{} Bot error: {}", style("✗").red(), e);
 
             // Save checkpoint on error
-            if let Some(path) = checkpoint_path {
+            if let Some(path) = args.checkpoint_path {
                 if let Err(e) = bot_runner.save_checkpoint(&path) {
                     eprintln!("{} Failed to save checkpoint: {}", style("✗").red(), e);
                 } else {
@@ -155,7 +158,7 @@ pub async fn run(
     };
 
     // Save final checkpoint
-    if let Some(path) = checkpoint_path {
+    if let Some(path) = args.checkpoint_path {
         bot_runner
             .save_checkpoint(&path)
             .context("Failed to save final checkpoint")?;

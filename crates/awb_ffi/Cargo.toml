@@ -31,6 +31,7 @@ lazy_static = "1.4"
 parking_lot = "0.12"
 chrono = { workspace = true }
 secrecy = { workspace = true }
+url = { workspace = true }
 
 [build-dependencies]
 uniffi = { workspace = true, features = ["build"] }

@@ -224,17 +224,17 @@ async fn main() -> Result<()> {
             skip_on_warning,
             log_every_n,
         } => {
-            commands::bot::run(
+            commands::bot::run(commands::bot::BotRunArgs {
                 wiki,
-                profile,
+                profile_path: profile,
                 max_edits,
                 dry_run,
-                checkpoint,
+                checkpoint_path: checkpoint,
                 auth_profile,
                 skip_no_change,
                 skip_on_warning,
                 log_every_n,
-            )
+            })
             .await
         }
         Commands::OAuth(oauth_cmd) => match oauth_cmd {
