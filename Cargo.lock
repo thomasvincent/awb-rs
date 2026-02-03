@@ -1524,7 +1524,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "camino",
- "uniffi_bindgen 0.28.3",
+ "uniffi_bindgen 0.31.0",
 ]
 
 [[package]]
