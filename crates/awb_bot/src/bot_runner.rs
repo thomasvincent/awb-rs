@@ -175,8 +175,30 @@ impl<C: MediaWikiClient> BotRunner<C> {
         let page_start = Instant::now();
         tracing::debug!("Processing page: {}", page_title);
 
-        // Parse title (simplified - in production would use proper parsing)
-        let title = Title::new(awb_domain::types::Namespace::MAIN, page_title);
+        // Parse title using namespace_util for proper namespace detection
+        let parsed = awb_engine::namespace_util::parse_title(page_title);
+
+        // Enforce namespace policy
+        if !self.config.is_namespace_allowed(parsed.namespace) {
+            tracing::debug!(
+                "Skipping page {} (namespace {:?} not allowed)",
+                page_title,
+                parsed.namespace
+            );
+            return Ok(PageResult {
+                title: page_title.to_string(),
+                action: PageAction::Skipped,
+                diff_summary: Some(format!(
+                    "Namespace {:?} not in allowed list",
+                    parsed.namespace
+                )),
+                warnings: vec![],
+                error: None,
+                timestamp: Utc::now(),
+            });
+        }
+
+        let title = Title::new(parsed.namespace, &parsed.name);
 
         // Fetch page content
         let page = self
@@ -184,6 +206,25 @@ impl<C: MediaWikiClient> BotRunner<C> {
             .get_page(&title)
             .await
             .map_err(|e| BotError::ApiError(e.to_string()))?;
+
+        // Check {{bots}}/{{nobots}} policy before transforming
+        let policy_result =
+            awb_engine::bot_policy::check_bot_allowed(&page.wikitext, &self.config.bot_name);
+        if !policy_result.is_allowed() {
+            let reason = match &policy_result {
+                awb_engine::bot_policy::BotPolicyResult::Denied { reason } => reason.clone(),
+                _ => "unknown".to_string(),
+            };
+            tracing::info!("Skipping page {} (bot policy: {})", page_title, reason);
+            return Ok(PageResult {
+                title: page_title.to_string(),
+                action: PageAction::Skipped,
+                diff_summary: Some(format!("Bot policy denied: {}", reason)),
+                warnings: vec![],
+                error: None,
+                timestamp: Utc::now(),
+            });
+        }
 
         // Apply transformations
         let plan = self.engine.apply(&page);
@@ -457,6 +498,79 @@ mod tests {
         let result = runner.process_page("TestPage").await.unwrap();
 
         assert_eq!(result.action, PageAction::Skipped);
+    }
+
+    #[tokio::test]
+    async fn test_bot_runner_nobots_skips_page() {
+        let config = BotConfig::default().with_bot_name("TestBot");
+        let mut client = MockClient::new();
+        client.add_page("NobotPage", "Some text\n{{nobots}}\nMore text");
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["NobotPage".to_string()]);
+        let result = runner.process_page("NobotPage").await.unwrap();
+
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("Bot policy denied"));
+    }
+
+    #[tokio::test]
+    async fn test_bot_runner_bots_deny_specific() {
+        let config = BotConfig::default().with_bot_name("AWB-RS");
+        let mut client = MockClient::new();
+        client.add_page("DenyPage", "Text {{bots|deny=AWB-RS}} more");
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["DenyPage".to_string()]);
+        let result = runner.process_page("DenyPage").await.unwrap();
+
+        assert_eq!(result.action, PageAction::Skipped);
+    }
+
+    #[tokio::test]
+    async fn test_bot_runner_namespace_enforcement() {
+        // Default config only allows MAIN namespace
+        let config = BotConfig::default();
+        let client = MockClient::new();
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(
+            config,
+            client,
+            engine,
+            vec!["Talk:SomePage".to_string()],
+        );
+        let result = runner.process_page("Talk:SomePage").await.unwrap();
+
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("Namespace"));
+    }
+
+    #[tokio::test]
+    async fn test_bot_runner_namespace_main_allowed() {
+        let config = BotConfig::default();
+        let mut client = MockClient::new();
+        client.add_page("MainPage", "unchanged content");
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["MainPage".to_string()]);
+        let result = runner.process_page("MainPage").await.unwrap();
+
+        // Should proceed (not skipped for namespace), but skipped for no-change
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("No changes"));
     }
 
     #[tokio::test]
