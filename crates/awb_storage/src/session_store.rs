@@ -4,6 +4,12 @@ use awb_domain::session::SessionState;
 use std::path::PathBuf;
 
 /// Reject writes to symlink targets to prevent symlink swap attacks.
+///
+/// Note: This is a best-effort TOCTOU check. Between the symlink_metadata call
+/// and the subsequent file operation, a race is theoretically possible. On Unix,
+/// using O_NOFOLLOW at open time would be stronger, but tokio::fs doesn't expose
+/// that. For our use case (bot checkpoint files in a controlled directory), this
+/// is sufficient.
 fn reject_symlink(path: &std::path::Path) -> Result<(), StorageError> {
     match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => {
@@ -77,7 +83,7 @@ impl SessionStore for JsonSessionStore {
         let final_path = self.session_path(&session.session_id)?;
         reject_symlink(&final_path)?;
         reject_symlink(&temp)?;
-        // Crash-safe: write to temp, then atomic rename
+        // Crash-safe: write to temp, fsync, then atomic rename
         tokio::fs::write(&temp, &json).await?;
         #[cfg(unix)]
         {
@@ -85,7 +91,18 @@ impl SessionStore for JsonSessionStore {
             let perms = std::fs::Permissions::from_mode(0o600);
             tokio::fs::set_permissions(&temp, perms).await?;
         }
+        // fsync temp file to ensure data is durable before rename
+        {
+            let file = tokio::fs::File::open(&temp).await?;
+            file.sync_all().await?;
+        }
         tokio::fs::rename(&temp, &final_path).await?;
+        // fsync parent directory to ensure the rename is durable
+        if let Some(parent) = final_path.parent() {
+            if let Ok(dir) = tokio::fs::File::open(parent).await {
+                let _ = dir.sync_all().await;
+            }
+        }
         Ok(())
     }
 

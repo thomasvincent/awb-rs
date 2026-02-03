@@ -50,20 +50,20 @@ fn test_credential_store_overwrite() {
 
 #[test]
 fn test_secret_redaction_basic() {
-    let text = "password=my_secret_pass123 token=abc456";
-    let redacted = redact_secrets(text, &["my_secret_pass123", "abc456"]);
+    let text = "password=my_secret_pass123 token=abc45678";
+    let redacted = redact_secrets(text, &["my_secret_pass123", "abc45678"]);
     assert!(!redacted.contains("my_secret_pass123"));
-    assert!(!redacted.contains("abc456"));
+    assert!(!redacted.contains("abc45678"));
     assert!(redacted.contains("[REDACTED]"));
 }
 
 #[test]
 fn test_secret_redaction_multiple_secrets() {
-    let text = "key1=secret1 key2=secret2 key3=secret3";
-    let redacted = redact_secrets(text, &["secret1", "secret2", "secret3"]);
-    assert!(!redacted.contains("secret1"));
-    assert!(!redacted.contains("secret2"));
-    assert!(!redacted.contains("secret3"));
+    let text = "key1=secret_one_long key2=secret_two_long key3=secret_three_x";
+    let redacted = redact_secrets(text, &["secret_one_long", "secret_two_long", "secret_three_x"]);
+    assert!(!redacted.contains("secret_one_long"));
+    assert!(!redacted.contains("secret_two_long"));
+    assert!(!redacted.contains("secret_three_x"));
     assert_eq!(redacted.matches("[REDACTED]").count(), 3);
 }
 

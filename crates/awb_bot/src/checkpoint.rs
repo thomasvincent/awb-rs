@@ -73,9 +73,8 @@ impl Checkpoint {
 
         // fsync parent directory to ensure directory entry is durable
         if let Some(parent) = path.parent() {
-            if let Ok(dir) = std::fs::File::open(parent) {
-                let _ = dir.sync_all();
-            }
+            let dir = std::fs::File::open(parent)?;
+            dir.sync_all()?;
         }
 
         Ok(())

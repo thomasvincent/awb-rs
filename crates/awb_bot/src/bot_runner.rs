@@ -159,7 +159,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
             }
 
             // Log progress
-            if (index + 1) % self.config.log_every_n as usize == 0 {
+            if self.config.log_every_n > 0 && (index + 1) % self.config.log_every_n as usize == 0 {
                 tracing::info!(
                     "Progress: {}/{} pages ({} edited, {} skipped, {} errors)",
                     index + 1,
