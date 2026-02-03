@@ -252,6 +252,12 @@ pub unsafe extern "C" fn compute_diff(
 }
 
 /// Frees a PageInfo struct returned by get_page().
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer returned by `awb_get_page`, or null.
+/// - The pointer must not have been freed previously.
+/// - After calling this function, the pointer is invalid and must not be used.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn awb_free_page_info(ptr: *mut PageInfo) {
     if !ptr.is_null() {
@@ -260,6 +266,12 @@ pub unsafe extern "C" fn awb_free_page_info(ptr: *mut PageInfo) {
 }
 
 /// Frees a TransformResult struct returned by apply_rules().
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer returned by `awb_apply_rules`, or null.
+/// - The pointer must not have been freed previously.
+/// - After calling this function, the pointer is invalid and must not be used.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn awb_free_transform_result(ptr: *mut TransformResult) {
     if !ptr.is_null() {
@@ -268,6 +280,12 @@ pub unsafe extern "C" fn awb_free_transform_result(ptr: *mut TransformResult) {
 }
 
 /// Frees a Vec<String> returned by fetch_list().
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer returned by `awb_fetch_list`, or null.
+/// - The pointer must not have been freed previously.
+/// - After calling this function, the pointer is invalid and must not be used.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn awb_free_string_vec(ptr: *mut Vec<String>) {
     if !ptr.is_null() {
