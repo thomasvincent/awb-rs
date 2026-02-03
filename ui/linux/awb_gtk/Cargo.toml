@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# Core dependencies (all platforms)
 awb_domain = { path = "../../../crates/awb_domain" }
 awb_engine = { path = "../../../crates/awb_engine" }
 awb_mw_api = { path = "../../../crates/awb_mw_api" }
@@ -18,7 +19,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 
-# GTK4 dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+# GTK4 dependencies (Linux only)
 gtk = { package = "gtk4", version = "0.9", features = ["v4_10"] }
 libadwaita = { version = "0.7", features = ["v1_5"] }
 glib = "0.20"
