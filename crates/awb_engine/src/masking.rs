@@ -12,11 +12,14 @@
 //! - If any sentinel leaks or restoration count mismatches → return original text (fail closed).
 
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A sentinel prefix that is extremely unlikely in real wikitext.
-/// We append a per-invocation nonce to make collision impossible.
 const SENTINEL_PREFIX: &str = "\x00\x01AWB_MASK_";
 const SENTINEL_SUFFIX: &str = "\x00\x02";
+
+/// Global nonce counter to ensure each mask() call uses unique sentinels.
+static MASK_NONCE: AtomicU64 = AtomicU64::new(0);
 
 /// Holds masked regions and the masked text.
 #[derive(Debug)]
@@ -44,27 +47,55 @@ impl MaskedText {
 
     /// Restore all sentinels with original content.
     /// If any sentinel is missing or extra sentinels remain, returns the original text unchanged (fail closed).
+    ///
+    /// Uses single-pass assembly to avoid O(n*m) repeated string copies.
     pub fn unmask(self) -> String {
-        let mut result = self.masked;
-        for (i, region) in self.regions.iter().enumerate() {
-            let sentinel = format!("{}{}{}", self.sentinel_base, i, SENTINEL_SUFFIX);
-            // Replace exactly one occurrence
-            if let Some(pos) = result.find(&sentinel) {
-                result = format!(
-                    "{}{}{}",
-                    &result[..pos],
-                    region,
-                    &result[pos + sentinel.len()..]
-                );
+        if self.regions.is_empty() {
+            return self.masked;
+        }
+
+        // Build all sentinel strings once
+        let sentinels: Vec<String> = (0..self.regions.len())
+            .map(|i| format!("{}{}{}", self.sentinel_base, i, SENTINEL_SUFFIX))
+            .collect();
+
+        // Single-pass: scan through masked text, find sentinels, assemble result
+        let mut result = String::with_capacity(self.masked.len());
+        let mut pos = 0;
+        let mut restored_count = 0;
+        let masked = &self.masked;
+
+        while pos < masked.len() {
+            // Check if current position starts with the sentinel base
+            if masked[pos..].starts_with(&self.sentinel_base) {
+                // Find which sentinel this is
+                let mut found = false;
+                for (i, sentinel) in sentinels.iter().enumerate() {
+                    if masked[pos..].starts_with(sentinel.as_str()) {
+                        result.push_str(&self.regions[i]);
+                        pos += sentinel.len();
+                        restored_count += 1;
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    // Unknown sentinel — fail closed
+                    return self.original;
+                }
             } else {
-                // Sentinel missing — fail closed
-                return self.original;
+                // Copy character
+                let ch = masked[pos..].chars().next().unwrap();
+                result.push(ch);
+                pos += ch.len_utf8();
             }
         }
-        // Check no sentinels remain (in case transform duplicated one)
-        if result.contains(&self.sentinel_base) {
+
+        // Verify all sentinels were restored exactly once
+        if restored_count != self.regions.len() {
             return self.original;
         }
+
         result
     }
 }
@@ -91,7 +122,8 @@ pub fn mask(text: &str) -> MaskedText {
         };
     }
 
-    let sentinel_base = SENTINEL_PREFIX.to_string();
+    let nonce = MASK_NONCE.fetch_add(1, Ordering::Relaxed);
+    let sentinel_base = format!("{}{}N", SENTINEL_PREFIX, nonce);
     let mut regions: Vec<String> = Vec::new();
     let mut result = String::with_capacity(text.len());
     let bytes = text.as_bytes();
@@ -286,11 +318,23 @@ fn find_case_insensitive(haystack: &str, needle_lower: &str) -> Option<usize> {
 }
 
 /// Find matching `}}` for `{{` at position `start`. Returns exclusive end position.
+///
+/// Skips over HTML comments (`<!-- ... -->`) and extension tag blocks inside
+/// the template to avoid false matches on `}}` within those regions.
+/// SAFETY: `{`, `}`, `<`, `-`, `>` are all ASCII (< 0x80) and cannot appear
+/// as continuation bytes in multi-byte UTF-8, so byte-level scanning is safe.
 fn find_matching_braces(bytes: &[u8], start: usize) -> Option<usize> {
     let mut depth = 0i32;
     let mut i = start;
     let len = bytes.len();
     while i < len {
+        // Skip HTML comments: <!-- ... -->
+        if i + 3 < len && &bytes[i..i + 4] == b"<!--" {
+            if let Some(end) = find_bytes(bytes, i + 4, b"-->") {
+                i = end + 3;
+                continue;
+            }
+        }
         if i + 1 < len && bytes[i] == b'{' && bytes[i + 1] == b'{' {
             depth += 1;
             i += 2;
@@ -307,15 +351,11 @@ fn find_matching_braces(bytes: &[u8], start: usize) -> Option<usize> {
     None // Unmatched — don't mask (fail closed: leave as-is)
 }
 
-/// Check if `[[` at `start` is a File: or Image: link.
+/// Check if `[[` at `start` is a File: or Image: link (case-insensitive).
 fn is_file_or_image_link(text: &str, start: usize) -> bool {
     let after = &text[start + 2..];
-    let prefixes = ["File:", "file:", "FILE:", "Image:", "image:", "IMAGE:"];
-    prefixes.iter().any(|p| after.starts_with(p))
-        || after
-            .get(..6)
-            .map(|s| s.eq_ignore_ascii_case("file:") || s.eq_ignore_ascii_case("image"))
-            .unwrap_or(false)
+    (after.len() >= 5 && after[..5].eq_ignore_ascii_case("file:"))
+        || (after.len() >= 6 && after[..6].eq_ignore_ascii_case("image:"))
 }
 
 /// Find matching `]]` for `[[` at position `start`. Returns exclusive end position.
@@ -601,5 +641,42 @@ mod tests {
         let masked = mask(text);
         assert_eq!(masked.regions.len(), 4);
         assert_eq!(masked.unmask(), text);
+    }
+
+    // --- Regression tests for code review findings ---
+
+    #[test]
+    fn test_braces_inside_html_comment_in_template() {
+        // HIGH-2: }} inside a comment within a template must not close the template early
+        let text = "{{template|<!-- }} -->|arg}}";
+        let masked = mask(text);
+        assert_eq!(masked.regions.len(), 1);
+        assert_eq!(&masked.regions[0], text);
+        assert_eq!(masked.unmask(), text);
+    }
+
+    #[test]
+    fn test_mixed_case_file_link() {
+        // HIGH-1: mixed-case File:/Image: should be detected
+        let text = "[[fIlE:Test.png|thumb]]";
+        let masked = mask(text);
+        assert_eq!(masked.regions.len(), 1);
+        assert_eq!(masked.unmask(), text);
+    }
+
+    #[test]
+    fn test_mixed_case_image_link() {
+        let text = "[[iMaGe:Photo.jpg|200px]]";
+        let masked = mask(text);
+        assert_eq!(masked.regions.len(), 1);
+        assert_eq!(masked.unmask(), text);
+    }
+
+    #[test]
+    fn test_nonce_prevents_cross_mask_collision() {
+        // CRITICAL-1: two mask() calls should use different sentinels
+        let m1 = mask("{{a}}");
+        let m2 = mask("{{b}}");
+        assert_ne!(m1.sentinel_base, m2.sentinel_base);
     }
 }
