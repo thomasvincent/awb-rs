@@ -313,15 +313,21 @@ impl FixModule for HeadingSpacing {
                 && line.trim_start().chars().take_while(|&c| c == '=').count() >= 2;
 
             if is_heading && i > 0 {
-                let prev_line = lines[i - 1];
+                // Check if there's any actual content before this heading
+                let has_preceding_content = lines[..i].iter().any(|l| !l.trim().is_empty());
 
-                if !prev_line.trim().is_empty() {
-                    // Previous line has content, add blank line before heading
-                    result_lines.push("");
-                    changed = true;
+                if !has_preceding_content {
+                    // Heading is at BOS (only whitespace before it) - don't add blank line
+                    // This prevents cosmetic-only edits at beginning of string
+                } else {
+                    let prev_line = lines[i - 1];
+                    if !prev_line.trim().is_empty() {
+                        // Previous line has content, add blank line before heading
+                        result_lines.push("");
+                        changed = true;
+                    }
+                    // If prev_line is empty, blank line already exists - no action needed
                 }
-                // If prev_line is empty, blank line already exists - no action needed
-                // This prevents cosmetic-only edits at BOS (beginning of string)
             }
 
             result_lines.push(line);
@@ -1402,6 +1408,26 @@ mod tests {
         let result = fix.apply(input, &ctx);
         // Already has blank line(s), should not add more
         assert_eq!(result.as_ref(), input);
+    }
+
+    #[test]
+    fn test_heading_spacing_bos_no_leading_newline() {
+        let fix = HeadingSpacing;
+        let ctx = test_context("Test");
+        // Heading at absolute BOS - should NOT add a leading newline
+        let input = "== Heading ==";
+        let result = fix.apply(input, &ctx);
+        assert_eq!(result.as_ref(), input, "Should not add newline at BOS");
+    }
+
+    #[test]
+    fn test_heading_spacing_bos_with_preceding_content() {
+        let fix = HeadingSpacing;
+        let ctx = test_context("Test");
+        // Actual content before heading - SHOULD add blank line
+        let input = "Some text\n== Heading ==";
+        let result = fix.apply(input, &ctx);
+        assert_eq!(result.as_ref(), "Some text\n\n== Heading ==");
     }
 
     // --- CategorySorting additional tests ---

@@ -166,6 +166,3 @@ struct RuleDetailEditor: View {
     }
 }
 
-#Preview {
-    RuleEditorView()
-}

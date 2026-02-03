@@ -639,6 +639,30 @@ mod tests {
         ) -> Result<String, MwApiError> {
             Ok("<html>parsed</html>".to_string())
         }
+
+        async fn list_category_members(
+            &self,
+            _category: &str,
+            _limit: u32,
+        ) -> Result<Vec<String>, MwApiError> {
+            Ok(vec![])
+        }
+
+        async fn search_pages(
+            &self,
+            _query: &str,
+            _limit: u32,
+        ) -> Result<Vec<String>, MwApiError> {
+            Ok(vec![])
+        }
+
+        async fn get_backlinks(
+            &self,
+            _title: &str,
+            _limit: u32,
+        ) -> Result<Vec<String>, MwApiError> {
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
@@ -893,6 +917,18 @@ mod tests {
             async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
+
+            async fn list_category_members(&self, _category: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn search_pages(&self, _query: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn get_backlinks(&self, _title: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
         }
 
         let config = BotConfig::default();
@@ -956,6 +992,18 @@ mod tests {
 
             async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
+            }
+
+            async fn list_category_members(&self, _category: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn search_pages(&self, _query: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn get_backlinks(&self, _title: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
             }
         }
 
@@ -1074,6 +1122,18 @@ mod tests {
                 _title: &Title,
             ) -> Result<String, MwApiError> {
                 Ok("<html>parsed</html>".to_string())
+            }
+
+            async fn list_category_members(&self, _category: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn search_pages(&self, _query: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn get_backlinks(&self, _title: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
             }
         }
 
@@ -1199,6 +1259,18 @@ mod tests {
             async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
+
+            async fn list_category_members(&self, _category: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn search_pages(&self, _query: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn get_backlinks(&self, _title: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
         }
 
         let config = BotConfig::default().with_skip_no_change(false);
@@ -1266,6 +1338,18 @@ mod tests {
 
             async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
+            }
+
+            async fn list_category_members(&self, _category: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn search_pages(&self, _query: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
+            }
+
+            async fn get_backlinks(&self, _title: &str, _limit: u32) -> Result<Vec<String>, MwApiError> {
+                Ok(vec![])
             }
         }
 

@@ -1,29 +1,7 @@
 import Foundation
 
-// Models matching the FFI interface
-
-struct SessionHandle: Codable {
-    let id: UInt64
-}
-
-struct PageInfo: Codable {
-    let pageId: UInt64
-    let title: String
-    let revision: UInt64
-    let timestamp: String
-    let wikitext: String
-    let sizeBytes: UInt64
-    let isRedirect: Bool
-}
-
-struct TransformResult: Codable {
-    let newWikitext: String
-    let rulesApplied: [String]
-    let fixesApplied: [String]
-    let summary: String
-    let warnings: [String]
-    let diffHtml: String
-}
+// Note: SessionHandle, PageInfo, and TransformResult are now defined in Generated/awb_ffi.swift
+// These models are for UI-layer data structures only
 
 struct RuleItem: Identifiable, Codable {
     let id: UUID
@@ -62,31 +40,5 @@ struct RuleSet: Codable {
             return json
         }
         return "{}"
-    }
-}
-
-enum FfiError: Error, LocalizedError {
-    case networkError(String)
-    case authenticationError
-    case notFound
-    case permissionDenied
-    case parseError(String)
-    case internalError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .networkError(let msg):
-            return "Network error: \(msg)"
-        case .authenticationError:
-            return "Authentication failed"
-        case .notFound:
-            return "Resource not found"
-        case .permissionDenied:
-            return "Permission denied"
-        case .parseError(let msg):
-            return "Parse error: \(msg)"
-        case .internalError(let msg):
-            return "Internal error: \(msg)"
-        }
     }
 }

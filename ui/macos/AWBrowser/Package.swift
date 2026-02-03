@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "AWBrowser",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(
@@ -14,12 +14,20 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
+        .systemLibrary(
+            name: "AwbFfiC",
+            path: "Sources/AwbFfiC"
+        ),
         .executableTarget(
             name: "AWBrowser",
-            dependencies: [],
+            dependencies: ["AwbFfiC"],
             path: "Sources/AWBrowser",
             linkerSettings: [
-                .linkedLibrary("awb_ffi", .when(platforms: [.macOS]))
+                .unsafeFlags([
+                    "-L../../../target/debug",
+                    "-L../../../target/release"
+                ]),
+                .linkedLibrary("awb_ffi")
             ]
         )
     ]
