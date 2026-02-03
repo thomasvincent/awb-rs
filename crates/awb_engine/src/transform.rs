@@ -197,6 +197,26 @@ impl TransformEngine {
             format!("AWB-RS ([[WP:AWB]]): {}", summaries.join(", "))
         };
 
+        // Determine if the edit is cosmetic-only (WP:COSMETIC).
+        // An edit is cosmetic-only if no rules were applied AND all fix modules
+        // that changed text have Cosmetic classification.
+        let is_cosmetic_only = if rules_applied.is_empty() && !fixes_applied.is_empty() {
+            fixes_applied.iter().all(|id| {
+                self.fix_registry
+                    .all_modules()
+                    .iter()
+                    .find(|m| m.id() == id)
+                    .map(|m| m.classification() == crate::fix_config::FixClassification::Cosmetic)
+                    .unwrap_or(false)
+            })
+        } else if !rules_applied.is_empty() {
+            // User rules are never cosmetic
+            false
+        } else {
+            // No changes at all — not cosmetic
+            false
+        };
+
         EditPlan {
             page: page.clone(),
             new_wikitext: final_text,
@@ -205,6 +225,7 @@ impl TransformEngine {
             diff_ops,
             summary,
             warnings,
+            is_cosmetic_only,
         }
     }
 }

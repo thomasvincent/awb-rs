@@ -260,6 +260,22 @@ impl<C: MediaWikiClient> BotRunner<C> {
             }
         }
 
+        // WP:COSMETIC: skip edits that are cosmetic-only in unattended mode
+        if plan.is_cosmetic_only && self.config.skip_cosmetic_only {
+            tracing::debug!(
+                "Skipping page {} (cosmetic-only edit, WP:COSMETIC)",
+                page_title
+            );
+            return Ok(PageResult {
+                title: page_title.to_string(),
+                action: PageAction::Skipped,
+                diff_summary: Some("Cosmetic-only edit skipped (WP:COSMETIC)".to_string()),
+                warnings: vec![],
+                error: None,
+                timestamp: Utc::now(),
+            });
+        }
+
         // Check for warnings
         let warnings: Vec<String> = plan.warnings.iter().map(|w| format!("{:?}", w)).collect();
 

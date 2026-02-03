@@ -228,6 +228,7 @@ mod tests {
             diff_ops: vec![],
             summary: "test edit".to_string(),
             warnings: vec![],
+            is_cosmetic_only: false,
         }
     }
 
