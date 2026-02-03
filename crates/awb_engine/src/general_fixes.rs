@@ -73,22 +73,24 @@ impl FixRegistry {
         ctx: &FixContext,
         enabled_ids: &HashSet<String>,
     ) -> Vec<(String, String)> {
-        // NOTE: Each changed text is cloned for the return value. If callers only need
-        // the final text and the list of changed IDs (not intermediate states), this
-        // could be optimized to collect only IDs and return (final_text, Vec<String>).
-        let mut results = Vec::new();
+        let mut changed_ids = Vec::new();
         let mut current = text.to_string();
         for module in &self.modules {
             if enabled_ids.contains(module.id()) {
                 let new = module.apply(&current, ctx);
                 let new_owned = new.into_owned();
                 if new_owned != current {
+                    changed_ids.push(module.id().to_string());
                     current = new_owned;
-                    results.push((module.id().to_string(), current.clone()));
                 }
             }
         }
-        results
+        // Return each changed ID paired with the final text (not intermediate states).
+        // Callers in transform.rs only compare against the final cumulative result.
+        changed_ids
+            .into_iter()
+            .map(|id| (id, current.clone()))
+            .collect()
     }
 
     pub fn all_modules(&self) -> &[Box<dyn FixModule>] {
@@ -613,6 +615,11 @@ impl FixModule for DuplicateWikilinkRemoval {
         1
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
+        // Early exit: if no wikilinks present, nothing to deduplicate
+        if !text.contains("[[") {
+            return Cow::Borrowed(text);
+        }
+
         use std::collections::HashSet;
 
         static LINK_RE: OnceLock<regex::Regex> = OnceLock::new();

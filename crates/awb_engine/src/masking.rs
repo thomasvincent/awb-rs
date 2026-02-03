@@ -19,6 +19,10 @@ const SENTINEL_PREFIX: &str = "\x00\x01AWB_MASK_";
 const SENTINEL_SUFFIX: &str = "\x00\x02";
 
 /// Global nonce counter to ensure each mask() call uses unique sentinels.
+/// Relaxed ordering is sufficient: we only need a unique value per call,
+/// not happens-before relationships across threads. The worst case with
+/// Relaxed is two threads seeing the same value, but fetch_add is atomic
+/// on all platforms so this cannot happen.
 static MASK_NONCE: AtomicU64 = AtomicU64::new(0);
 
 /// Holds masked regions and the masked text.
