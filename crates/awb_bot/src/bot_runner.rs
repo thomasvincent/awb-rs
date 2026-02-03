@@ -126,6 +126,13 @@ impl<C: MediaWikiClient> BotRunner<C> {
                     };
                     self.checkpoint
                         .record_page(page_title.clone(), edited, skipped, errored);
+
+                    // Persist checkpoint to disk for crash recovery
+                    if let Some(ref cp_path) = self.config.checkpoint_path {
+                        if let Err(e) = self.checkpoint.save(cp_path) {
+                            tracing::error!("Failed to save checkpoint: {}", e);
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Error processing page {}: {}", page_title, e);
@@ -140,6 +147,13 @@ impl<C: MediaWikiClient> BotRunner<C> {
                     self.report.record_page(result);
                     self.checkpoint
                         .record_page(page_title.clone(), false, false, true);
+
+                    // Persist checkpoint to disk for crash recovery
+                    if let Some(ref cp_path) = self.config.checkpoint_path {
+                        if let Err(e) = self.checkpoint.save(cp_path) {
+                            tracing::error!("Failed to save checkpoint: {}", e);
+                        }
+                    }
                 }
             }
 
@@ -310,6 +324,9 @@ impl<C: MediaWikiClient> BotRunner<C> {
             });
 
             tracing::info!("Saved page {} (rev: {:?})", page_title, response.new_revid);
+
+            // Sleep after successful edit to respect rate limits
+            tokio::time::sleep(self.config.edit_delay).await;
 
             Ok(PageResult {
                 title: page_title.to_string(),

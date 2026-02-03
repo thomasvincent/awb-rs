@@ -57,6 +57,11 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
 
     // Check {{bots|...}} variants
     static BOTS_RE: OnceLock<regex::Regex> = OnceLock::new();
+    // Note: `[^}]*` stops at the first `}`, not `}}`. This is acceptable because:
+    // 1. Normal params like `deny=BotA,BotB` contain no `}` characters
+    // 2. Nested templates (containing `{{`) are caught by the fail-closed check below
+    // 3. Edge cases like `{{bots|deny=Bot}extra}}` won't match, which is safe (fail-open
+    //    for the regex means the page is processed, but the nested-template check catches it)
     let bots_re = BOTS_RE.get_or_init(|| {
         regex::Regex::new(r"(?i)\{\{\s*bots\s*\|([^}]*)\}\}").expect("known-valid regex")
     });

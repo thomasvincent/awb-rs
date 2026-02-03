@@ -317,13 +317,9 @@ impl FixModule for HeadingSpacing {
                     // Previous line has content, add blank line before heading
                     result_lines.push("");
                     changed = true;
-                } else if i == 1 && prev_line.is_empty() {
-                    // Special case: input like "\n== Heading ==" splits to ["", "== Heading =="]
-                    // prev_line is "" which we already pushed, but we need TWO empty lines
-                    // for a proper blank line (\n\n), so add another
-                    result_lines.push("");
-                    changed = true;
                 }
+                // BOS cosmetic edit removed: if i==1 and prev_line is empty,
+                // the blank line already exists — no need to add another
             }
 
             result_lines.push(line);
@@ -367,25 +363,25 @@ impl FixModule for HtmlToWikitext {
         static ITALIC_RE: OnceLock<regex::Regex> = OnceLock::new();
         static BR_RE: OnceLock<regex::Regex> = OnceLock::new();
 
-        let mut result = text.to_string();
-        // Bold (non-greedy, non-nested)
-        let re = BOLD_RE
+        let bold_re = BOLD_RE
             .get_or_init(|| regex::Regex::new(r"(?i)<b>([^<]*)</b>").expect("known-valid regex"));
-        result = re.replace_all(&result, "'''$1'''").into_owned();
-        // Italic (non-greedy, non-nested)
-        let re = ITALIC_RE
+        let italic_re = ITALIC_RE
             .get_or_init(|| regex::Regex::new(r"(?i)<i>([^<]*)</i>").expect("known-valid regex"));
-        result = re.replace_all(&result, "''$1''").into_owned();
-        // BR
-        let re =
+        let br_re =
             BR_RE.get_or_init(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("known-valid regex"));
-        result = re.replace_all(&result, "<br />").into_owned();
 
-        if result == text {
-            Cow::Borrowed(text)
-        } else {
-            Cow::Owned(result)
+        // Check if any regex matches before allocating
+        if !bold_re.is_match(text) && !italic_re.is_match(text) && !br_re.is_match(text) {
+            return Cow::Borrowed(text);
         }
+
+        // At least one match found, proceed with replacements
+        let mut result = text.to_string();
+        result = bold_re.replace_all(&result, "'''$1'''").into_owned();
+        result = italic_re.replace_all(&result, "''$1''").into_owned();
+        result = br_re.replace_all(&result, "<br />").into_owned();
+
+        Cow::Owned(result)
     }
 }
 
@@ -449,7 +445,7 @@ impl FixModule for CategorySorting {
         0
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
-        const PLACEHOLDER: &str = "\x00AWB_SORT_PLACEHOLDER\x00";
+        const PLACEHOLDER: &str = "\x02AWB_SORT_PLACEHOLDER\x02";
 
         // Fail closed: if input already contains the placeholder, do not modify
         if text.contains(PLACEHOLDER) {
@@ -950,7 +946,8 @@ mod tests {
         let input = "\n== Heading ==\nContent";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result.as_ref(), "\n\n== Heading ==\nContent");
+        // No cosmetic edit at BOS - input already has blank line, leave unchanged
+        assert_eq!(result.as_ref(), input);
     }
 
     #[test]
@@ -1387,7 +1384,7 @@ mod tests {
     fn test_category_sorting_placeholder_collision() {
         let fix = CategorySorting;
         let ctx = test_context("Test");
-        let input = "text with \x00AWB_SORT_PLACEHOLDER\x00 in it\n[[Category:B]]\n[[Category:A]]\n";
+        let input = "text with \x02AWB_SORT_PLACEHOLDER\x02 in it\n[[Category:B]]\n[[Category:A]]\n";
         let result = fix.apply(input, &ctx);
         // Should return original text unchanged (fail closed)
         assert_eq!(result.as_ref(), input);

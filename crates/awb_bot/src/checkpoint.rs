@@ -56,12 +56,28 @@ impl Checkpoint {
     pub fn save(&self, path: &Path) -> Result<(), CheckpointError> {
         let json = serde_json::to_string_pretty(self)?;
         let tmp_path = path.with_extension("tmp");
-        std::fs::write(&tmp_path, &json)?;
+
+        {
+            let file = std::fs::File::create(&tmp_path)?;
+            let mut writer = std::io::BufWriter::new(&file);
+            std::io::Write::write_all(&mut writer, json.as_bytes())?;
+            std::io::Write::flush(&mut writer)?;
+            file.sync_all()?;
+        }
+
         std::fs::rename(&tmp_path, path).map_err(|e| {
             // Clean up temp file on rename failure
             let _ = std::fs::remove_file(&tmp_path);
             e
         })?;
+
+        // fsync parent directory to ensure directory entry is durable
+        if let Some(parent) = path.parent() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+
         Ok(())
     }
 
