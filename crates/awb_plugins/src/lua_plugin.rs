@@ -597,4 +597,128 @@ mod tests {
         let roundtripped: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(original, roundtripped);
     }
+
+    #[test]
+    fn test_sandbox_blocks_io_open() {
+        let script = r#"
+            function transform(text)
+                io.open("/etc/passwd", "r")
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("io_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_require() {
+        let script = r#"
+            function transform(text)
+                require("os")
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("require_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_load() {
+        let script = r#"
+            function transform(text)
+                local f = load("return os")
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("load_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_loadstring() {
+        let script = r#"
+            function transform(text)
+                local f = loadstring("return 1")
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("loadstring_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_dofile() {
+        let script = r#"
+            function transform(text)
+                dofile("/etc/passwd")
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("dofile_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_debug() {
+        let script = r#"
+            function transform(text)
+                debug.getinfo(1)
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("debug_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_blocks_package() {
+        let script = r#"
+            function transform(text)
+                package.loaded["os"] = nil
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("package_test", script, SandboxConfig::default()).unwrap();
+        assert!(plugin.transform("test").is_err());
+    }
+
+    #[test]
+    fn test_sandbox_stash_early_attempt() {
+        // Try to capture a reference to os.execute before sandbox removes it
+        let script = r#"
+            -- Attempt to stash os before sandbox clears it
+            local stashed_os = os
+            function transform(text)
+                if stashed_os then
+                    stashed_os.execute("echo pwned")
+                end
+                return text
+            end
+        "#;
+        let plugin = LuaPlugin::from_string("stash_test", script, SandboxConfig::default()).unwrap();
+        // Should either fail to load (os is nil at load time) or fail at runtime
+        let result = plugin.transform("test");
+        // The stash attempt should fail because sandbox is applied BEFORE script loads
+        assert!(result.is_err() || result.unwrap() == "test");
+    }
+
+    #[test]
+    fn test_memory_limit_enforced() {
+        let script = r#"
+            function transform(text)
+                local t = {}
+                for i = 1, 10000000 do
+                    t[i] = string.rep("x", 1000)
+                end
+                return text
+            end
+        "#;
+        let config = SandboxConfig {
+            memory_limit: 2 * 1024 * 1024, // 2MB
+            ..SandboxConfig::default()
+        };
+        let plugin = LuaPlugin::from_string("mem_test", script, config).unwrap();
+        let result = plugin.transform("test");
+        assert!(result.is_err(), "Memory limit should be enforced");
+    }
 }

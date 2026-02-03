@@ -3,6 +3,19 @@ use async_trait::async_trait;
 use awb_domain::session::SessionState;
 use std::path::PathBuf;
 
+/// Reject writes to symlink targets to prevent symlink swap attacks.
+fn reject_symlink(path: &std::path::Path) -> Result<(), StorageError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            Err(StorageError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("Refusing to write to symlink: {}", path.display()),
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
 #[async_trait]
 pub trait SessionStore: Send + Sync {
     async fn save(&self, session: &SessionState) -> Result<(), StorageError>;
@@ -62,14 +75,23 @@ impl SessionStore for JsonSessionStore {
             .map_err(|e| StorageError::Serialize(e.to_string()))?;
         let temp = self.temp_path(&session.session_id)?;
         let final_path = self.session_path(&session.session_id)?;
+        reject_symlink(&final_path)?;
+        reject_symlink(&temp)?;
         // Crash-safe: write to temp, then atomic rename
         tokio::fs::write(&temp, &json).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            tokio::fs::set_permissions(&temp, perms).await?;
+        }
         tokio::fs::rename(&temp, &final_path).await?;
         Ok(())
     }
 
     async fn load(&self, id: &str) -> Result<SessionState, StorageError> {
         let path = self.session_path(id)?;
+        reject_symlink(&path)?;
         if !path.exists() {
             // Try recovering from temp file
             let temp = self.temp_path(id)?;
@@ -109,6 +131,7 @@ impl SessionStore for JsonSessionStore {
 
     async fn delete(&self, id: &str) -> Result<(), StorageError> {
         let path = self.session_path(id)?;
+        reject_symlink(&path)?;
         if path.exists() {
             tokio::fs::remove_file(&path).await?;
         }
@@ -117,5 +140,49 @@ impl SessionStore for JsonSessionStore {
             tokio::fs::remove_file(&temp).await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_symlink_rejected_on_save() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let store = JsonSessionStore::new(dir.path().join("sessions"));
+
+        // Create a symlink target
+        let target = dir.path().join("target.json");
+        std::fs::write(&target, "{}").unwrap();
+
+        // Create sessions dir and a symlink inside it
+        let sessions_dir = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        let link_path = sessions_dir.join("evil.json");
+        std::os::unix::fs::symlink(&target, &link_path).unwrap();
+
+        // Try to save a session with id "evil" — should be rejected
+        let session = SessionState::new("test_profile");
+        // Manually set session_id to "evil" to match the symlink filename
+        let mut session = session;
+        session.session_id = "evil".to_string();
+        let result = store.save(&session).await;
+        assert!(result.is_err(), "Symlink target should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_session_roundtrip() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let store = JsonSessionStore::new(dir.path().join("sessions"));
+
+        let mut session = SessionState::new("test_profile");
+        session.session_id = "test123".to_string();
+        store.save(&session).await.unwrap();
+        let loaded = store.load("test123").await.unwrap();
+        assert_eq!(loaded.session_id, "test123");
     }
 }
