@@ -25,6 +25,13 @@ pub struct BotConfig {
 
     /// Dry-run mode - show diffs without saving
     pub dry_run: bool,
+
+    /// Bot username for {{bots}}/{{nobots}} policy compliance
+    pub bot_name: String,
+
+    /// Allowed namespaces (empty = all allowed)
+    #[serde(default)]
+    pub allowed_namespaces: std::collections::HashSet<awb_domain::types::Namespace>,
 }
 
 impl Default for BotConfig {
@@ -37,6 +44,12 @@ impl Default for BotConfig {
             emergency_stop_file: PathBuf::from("/tmp/awb-rs-stop"),
             log_every_n: 10,
             dry_run: false,
+            bot_name: "AWB-RS".to_string(),
+            allowed_namespaces: {
+                let mut ns = std::collections::HashSet::new();
+                ns.insert(awb_domain::types::Namespace::MAIN);
+                ns
+            },
         }
     }
 }
@@ -94,6 +107,29 @@ impl BotConfig {
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
         self
+    }
+
+    /// Set bot name for {{bots}}/{{nobots}} policy compliance
+    #[must_use]
+    pub fn with_bot_name(mut self, name: impl Into<String>) -> Self {
+        self.bot_name = name.into();
+        self
+    }
+
+    /// Set allowed namespaces (empty = all allowed)
+    #[must_use]
+    pub fn with_allowed_namespaces(
+        mut self,
+        namespaces: std::collections::HashSet<awb_domain::types::Namespace>,
+    ) -> Self {
+        self.allowed_namespaces = namespaces;
+        self
+    }
+
+    /// Check if a namespace is allowed under the current policy.
+    /// Empty allowed set means all namespaces are permitted.
+    pub fn is_namespace_allowed(&self, ns: awb_domain::types::Namespace) -> bool {
+        self.allowed_namespaces.is_empty() || self.allowed_namespaces.contains(&ns)
     }
 }
 

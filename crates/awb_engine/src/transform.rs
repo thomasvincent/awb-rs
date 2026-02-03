@@ -101,12 +101,17 @@ impl TransformEngine {
     }
 
     pub fn apply(&self, page: &PageContent) -> EditPlan {
-        let mut text = page.wikitext.clone();
+        // Mask protected regions (nowiki, pre, code, syntaxhighlight, math,
+        // source, HTML comments, templates, File/Image links) so that
+        // neither find-and-replace rules nor general fixes can alter them.
+        let mut masked = crate::masking::mask(&page.wikitext);
+
         let mut rules_applied = Vec::new();
         let mut summaries = Vec::new();
         let mut warnings = Vec::new();
 
-        // Apply rules
+        // Apply rules to the masked text
+        let mut text = masked.masked.clone();
         for rule in &self.compiled_rules {
             let (new_text, id, comment) = match rule {
                 CompiledRule::Plain {
@@ -150,7 +155,7 @@ impl TransformEngine {
             }
         }
 
-        // Apply general fixes
+        // Apply general fixes to masked text
         let ctx = crate::general_fixes::FixContext {
             title: page.title.clone(),
             namespace: page.title.namespace,
@@ -170,12 +175,17 @@ impl TransformEngine {
         }
         text = current_text;
 
+        // Unmask: restore protected regions. If unmask fails (sentinel
+        // missing/duplicated), it returns the original text (fail closed).
+        masked.masked = text;
+        let final_text = masked.unmask();
+
         // Check for warnings
-        if text == page.wikitext {
+        if final_text == page.wikitext {
             warnings.push(Warning::NoChange);
         } else {
-            let added = text.len().saturating_sub(page.wikitext.len());
-            let removed = page.wikitext.len().saturating_sub(text.len());
+            let added = final_text.len().saturating_sub(page.wikitext.len());
+            let removed = page.wikitext.len().saturating_sub(final_text.len());
             if added + removed > 500 {
                 warnings.push(Warning::LargeChange {
                     added,
@@ -186,7 +196,7 @@ impl TransformEngine {
         }
 
         // Compute diff
-        let diff_ops = crate::diff_engine::compute_diff(&page.wikitext, &text);
+        let diff_ops = crate::diff_engine::compute_diff(&page.wikitext, &final_text);
 
         // Build summary
         let summary = if summaries.is_empty() {
@@ -197,7 +207,7 @@ impl TransformEngine {
 
         EditPlan {
             page: page.clone(),
-            new_wikitext: text,
+            new_wikitext: final_text,
             rules_applied,
             fixes_applied,
             diff_ops,
@@ -350,6 +360,50 @@ mod tests {
 
         assert!(!plan.new_wikitext.contains("   "));
         assert!(plan.fixes_applied.len() > 0);
+    }
+
+    #[test]
+    fn test_masking_protects_nowiki() {
+        let mut ruleset = RuleSet::new();
+        ruleset.add(Rule::new_plain("hello", "goodbye", true));
+
+        let registry = crate::general_fixes::FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let page = create_test_page("hello <nowiki>hello</nowiki> hello");
+        let plan = engine.apply(&page);
+
+        // The "hello" inside <nowiki> must be preserved
+        assert_eq!(plan.new_wikitext, "goodbye <nowiki>hello</nowiki> goodbye");
+    }
+
+    #[test]
+    fn test_masking_protects_templates() {
+        let mut ruleset = RuleSet::new();
+        ruleset.add(Rule::new_plain("foo", "bar", true));
+
+        let registry = crate::general_fixes::FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let page = create_test_page("foo {{template|foo}} foo");
+        let plan = engine.apply(&page);
+
+        // "foo" inside {{template|foo}} must be preserved
+        assert_eq!(plan.new_wikitext, "bar {{template|foo}} bar");
+    }
+
+    #[test]
+    fn test_masking_protects_html_comments() {
+        let mut ruleset = RuleSet::new();
+        ruleset.add(Rule::new_plain("secret", "public", true));
+
+        let registry = crate::general_fixes::FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let page = create_test_page("secret <!-- secret --> secret");
+        let plan = engine.apply(&page);
+
+        assert_eq!(plan.new_wikitext, "public <!-- secret --> public");
     }
 
     #[test]
