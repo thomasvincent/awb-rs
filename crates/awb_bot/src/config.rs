@@ -39,10 +39,18 @@ pub struct BotConfig {
     /// Delay between edits (default: 10 seconds)
     #[serde(default = "default_edit_delay")]
     pub edit_delay: Duration,
+
+    /// Save checkpoint every N pages (default: 25). Set to 1 to save after every page.
+    #[serde(default = "default_save_every_n")]
+    pub save_every_n: u32,
 }
 
 fn default_edit_delay() -> Duration {
     Duration::from_secs(10)
+}
+
+fn default_save_every_n() -> u32 {
+    25
 }
 
 impl Default for BotConfig {
@@ -63,6 +71,7 @@ impl Default for BotConfig {
             },
             checkpoint_path: None,
             edit_delay: default_edit_delay(),
+            save_every_n: default_save_every_n(),
         }
     }
 }
@@ -150,6 +159,13 @@ impl BotConfig {
     #[must_use]
     pub fn with_edit_delay(mut self, delay: Duration) -> Self {
         self.edit_delay = delay;
+        self
+    }
+
+    /// Set checkpoint save cadence
+    #[must_use]
+    pub fn with_save_every_n(mut self, n: u32) -> Self {
+        self.save_every_n = n.max(1); // At least every page
         self
     }
 
