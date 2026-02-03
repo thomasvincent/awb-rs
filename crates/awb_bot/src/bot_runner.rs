@@ -100,6 +100,10 @@ impl<C: MediaWikiClient> BotRunner<C> {
     }
 
     /// Run the bot
+    #[tracing::instrument(skip(self), fields(
+        total_pages = self.pages.len(),
+        bot_name = %self.config.bot_name
+    ))]
     pub async fn run(&mut self) -> Result<BotReport, BotError> {
         tracing::info!("Starting bot run with {} pages", self.pages.len());
         self.emit_telemetry(TelemetryEvent::session_started("bot"));
@@ -140,7 +144,12 @@ impl<C: MediaWikiClient> BotRunner<C> {
             }
 
             // Process page
-            match self.process_page(page_title).await {
+            let page_span = tracing::info_span!(
+                "process_page",
+                page_title = %page_title,
+                namespace = tracing::field::Empty
+            );
+            match self.process_page_instrumented(page_title, page_span).await {
                 Ok(result) => {
                     self.report.record_page(result.clone());
                     let (edited, skipped, errored) = match result.action {
@@ -204,6 +213,16 @@ impl<C: MediaWikiClient> BotRunner<C> {
         Ok(self.report.clone())
     }
 
+    /// Process a single page with instrumentation
+    async fn process_page_instrumented(
+        &self,
+        page_title: &str,
+        span: tracing::Span,
+    ) -> Result<PageResult, BotError> {
+        let _guard = span.enter();
+        self.process_page(page_title).await
+    }
+
     /// Process a single page
     async fn process_page(&self, page_title: &str) -> Result<PageResult, BotError> {
         let page_start = Instant::now();
@@ -211,6 +230,9 @@ impl<C: MediaWikiClient> BotRunner<C> {
 
         // Parse title using namespace_util for proper namespace detection
         let parsed = awb_engine::namespace_util::parse_title(page_title);
+
+        // Record namespace in current span
+        tracing::Span::current().record("namespace", format!("{:?}", parsed.namespace));
 
         // Enforce namespace policy
         if !self.config.is_namespace_allowed(parsed.namespace) {
@@ -323,6 +345,13 @@ impl<C: MediaWikiClient> BotRunner<C> {
 
         // Save edit (unless dry-run)
         if !self.config.dry_run {
+            let edit_span = tracing::info_span!(
+                "edit_operation",
+                action = tracing::field::Empty,
+                rules_applied = plan.rules_applied.len()
+            );
+            let _edit_guard = edit_span.enter();
+
             // Retry loop for edit conflicts (max 2 attempts)
             let max_retries = 1; // 1 retry = 2 total attempts
             let mut attempt = 0;
@@ -363,6 +392,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 match response {
                     Ok(resp) => {
                         if resp.result != "Success" {
+                            tracing::Span::current().record("action", "failed");
                             return Err(BotError::ApiError(format!(
                                 "Edit failed for {}: {}",
                                 page_title, resp.result
@@ -370,6 +400,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         }
 
                         // Success - break out of retry loop
+                        tracing::Span::current().record("action", "edit");
                         if attempt > 0 {
                             tracing::info!("Edit conflict resolved after retry for {}", page_title);
                         }
@@ -407,6 +438,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
                     Err(MwApiError::EditConflict { base_rev, current_rev }) => {
                         if attempt >= max_retries {
                             // Max retries exceeded - skip this page
+                            tracing::Span::current().record("action", "skip");
                             tracing::warn!(
                                 "Edit conflict persisted after {} attempts for {}: base={:?}, current={:?}",
                                 attempt + 1, page_title, base_rev, current_rev
@@ -438,6 +470,13 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 }
             }
         } else {
+            let dry_run_span = tracing::info_span!(
+                "edit_operation",
+                action = "skip",
+                rules_applied = plan.rules_applied.len()
+            );
+            let _dry_run_guard = dry_run_span.enter();
+
             tracing::info!("Dry-run: would edit page {}", page_title);
             Ok(PageResult {
                 title: page_title.to_string(),
