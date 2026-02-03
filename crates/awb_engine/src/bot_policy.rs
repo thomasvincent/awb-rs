@@ -66,6 +66,13 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
     for caps in bots_re.captures_iter(wikitext) {
         let params = &caps[1];
 
+        // Fail closed if params contain nested templates — regex can't parse these reliably
+        if params.contains("{{") {
+            return BotPolicyResult::Denied {
+                reason: "{{bots}} contains nested templates; failing closed".to_string(),
+            };
+        }
+
         // Parse key=value pairs
         for param in params.split('|') {
             let param = param.trim();
@@ -268,5 +275,12 @@ mod tests {
             reason: "test".to_string()
         }
         .is_allowed());
+    }
+
+    #[test]
+    fn test_nested_templates_in_bots_fails_closed() {
+        // Nested templates make regex parsing unreliable — fail closed
+        let result = check_bot_allowed("{{bots|deny={{PAGENAME}}}}", "MyBot");
+        assert!(matches!(result, BotPolicyResult::Denied { .. }));
     }
 }
