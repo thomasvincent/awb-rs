@@ -67,12 +67,17 @@ impl FixRegistry {
         result
     }
 
+    /// Apply all enabled fixes, returning the list of fix IDs that made changes
+    /// and the final text after all fixes.
     pub fn apply_all_returning_ids(
         &self,
         text: &str,
         ctx: &FixContext,
         enabled_ids: &HashSet<String>,
-    ) -> Vec<(String, String)> {
+    ) -> (Vec<String>, String) {
+        if enabled_ids.is_empty() {
+            return (Vec::new(), text.to_string());
+        }
         let mut changed_ids = Vec::new();
         let mut current = text.to_string();
         for module in &self.modules {
@@ -85,12 +90,7 @@ impl FixRegistry {
                 }
             }
         }
-        // Return each changed ID paired with the final text (not intermediate states).
-        // Callers in transform.rs only compare against the final cumulative result.
-        changed_ids
-            .into_iter()
-            .map(|id| (id, current.clone()))
-            .collect()
+        (changed_ids, current)
     }
 
     pub fn all_modules(&self) -> &[Box<dyn FixModule>] {

@@ -162,18 +162,10 @@ impl TransformEngine {
             is_redirect: page.is_redirect,
         };
 
-        let mut fixes_applied = Vec::new();
-        let mut current_text = text.clone();
-        for (id, new_text) in
+        let (fixes_applied, fixed_text) =
             self.fix_registry
-                .apply_all_returning_ids(&text, &ctx, &self.enabled_fixes)
-        {
-            if new_text != current_text {
-                fixes_applied.push(id);
-                current_text = new_text;
-            }
-        }
-        text = current_text;
+                .apply_all_returning_ids(&text, &ctx, &self.enabled_fixes);
+        text = fixed_text;
 
         // Unmask: restore protected regions. If unmask fails (sentinel
         // missing/duplicated), it returns the original text (fail closed).

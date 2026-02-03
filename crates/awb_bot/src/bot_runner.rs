@@ -98,11 +98,18 @@ impl<C: MediaWikiClient> BotRunner<C> {
             }
         });
 
-        let start_index = self.checkpoint.next_index();
-        for (index, page_title) in self.pages.iter().enumerate().skip(start_index) {
+        let mut pages_since_save: u32 = 0;
+
+        for (index, page_title) in self.pages.iter().enumerate() {
+            // Identity-based resume: skip pages already completed in a previous run.
+            // This is safe even if the page list is reordered between runs.
+            if self.checkpoint.is_completed(page_title) {
+                continue;
+            }
             // Check stop conditions
             if let Some(reason) = self.should_stop()? {
                 tracing::info!("Stopping bot: {}", reason);
+                self.persist_checkpoint().await;
                 self.report.finalize(false, Some(reason));
                 return Ok(self.report.clone());
             }
@@ -110,6 +117,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
             // Check for interrupt
             if shutdown_flag.load(Ordering::SeqCst) {
                 tracing::info!("Graceful shutdown initiated");
+                self.persist_checkpoint().await;
                 self.report
                     .finalize(false, Some("Interrupted by user".to_string()));
                 return Err(BotError::Interrupted);
@@ -126,13 +134,6 @@ impl<C: MediaWikiClient> BotRunner<C> {
                     };
                     self.checkpoint
                         .record_page(page_title.clone(), edited, skipped, errored);
-
-                    // Persist checkpoint to disk for crash recovery
-                    if let Some(ref cp_path) = self.config.checkpoint_path {
-                        if let Err(e) = self.checkpoint.save(cp_path) {
-                            tracing::error!("Failed to save checkpoint: {}", e);
-                        }
-                    }
                 }
                 Err(e) => {
                     tracing::error!("Error processing page {}: {}", page_title, e);
@@ -147,14 +148,14 @@ impl<C: MediaWikiClient> BotRunner<C> {
                     self.report.record_page(result);
                     self.checkpoint
                         .record_page(page_title.clone(), false, false, true);
-
-                    // Persist checkpoint to disk for crash recovery
-                    if let Some(ref cp_path) = self.config.checkpoint_path {
-                        if let Err(e) = self.checkpoint.save(cp_path) {
-                            tracing::error!("Failed to save checkpoint: {}", e);
-                        }
-                    }
                 }
+            }
+
+            // Periodic checkpoint persistence (every save_every_n pages)
+            pages_since_save += 1;
+            if pages_since_save >= self.config.save_every_n {
+                self.persist_checkpoint().await;
+                pages_since_save = 0;
             }
 
             // Log progress
@@ -171,6 +172,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
         }
 
         tracing::info!("Bot run completed successfully");
+        self.persist_checkpoint().await;
         self.report
             .finalize(true, Some("All pages processed".to_string()));
         self.emit_telemetry(TelemetryEvent::session_completed(
@@ -349,6 +351,21 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 error: None,
                 timestamp: Utc::now(),
             })
+        }
+    }
+
+    /// Persist checkpoint to disk using spawn_blocking to avoid blocking the async runtime.
+    /// Logs errors but does not fail the run — checkpoint loss is bounded by save_every_n.
+    async fn persist_checkpoint(&self) {
+        if let Some(ref cp_path) = self.config.checkpoint_path {
+            let checkpoint_data = self.checkpoint.clone();
+            let path = cp_path.clone();
+            let result = tokio::task::spawn_blocking(move || checkpoint_data.save(&path)).await;
+            match result {
+                Ok(Ok(())) => tracing::debug!("Checkpoint saved"),
+                Ok(Err(e)) => tracing::error!("Failed to save checkpoint: {}", e),
+                Err(e) => tracing::error!("Checkpoint save task panicked: {}", e),
+            }
         }
     }
 
@@ -609,5 +626,66 @@ mod tests {
         // In dry-run mode, pages with changes are still "skipped" (not actually saved)
         assert_eq!(result.action, PageAction::Skipped);
         assert!(result.diff_summary.unwrap().contains("Dry-run"));
+    }
+
+    #[tokio::test]
+    async fn test_identity_based_resume_skips_completed() {
+        // Simulate a checkpoint where "PageA" was already completed
+        let mut checkpoint = Checkpoint::new();
+        checkpoint.record_page("PageA".to_string(), true, false, false);
+
+        let config = BotConfig::default().with_skip_no_change(true);
+        let mut client = MockClient::new();
+        client.add_page("PageA", "content A");
+        client.add_page("PageB", "content B");
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        // Pages list is reordered: PageB first, PageA second
+        let pages = vec!["PageB".to_string(), "PageA".to_string()];
+        let mut runner = BotRunner::with_checkpoint(config, client, engine, pages, checkpoint);
+        let report = runner.run().await.unwrap();
+
+        // PageA should be skipped (already completed), PageB processed (skipped for no-change)
+        assert_eq!(report.pages_processed, 1); // only PageB
+        assert!(!runner.checkpoint.is_completed("PageC")); // sanity
+        assert!(runner.checkpoint.is_completed("PageA")); // from previous run
+        assert!(runner.checkpoint.is_completed("PageB")); // newly processed
+    }
+
+    #[tokio::test]
+    async fn test_namespace_image_alias_skipped() {
+        // "Image:" is an alias for File namespace, which is not in the default allowlist
+        let config = BotConfig::default();
+        let client = MockClient::new();
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["Image:Foo.jpg".to_string()]);
+        let result = runner.process_page("Image:Foo.jpg").await.unwrap();
+
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("Namespace"));
+    }
+
+    #[tokio::test]
+    async fn test_namespace_user_skipped() {
+        let config = BotConfig::default();
+        let client = MockClient::new();
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner =
+            BotRunner::new(config, client, engine, vec!["User:Example".to_string()]);
+        let result = runner.process_page("User:Example").await.unwrap();
+
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("Namespace"));
     }
 }
