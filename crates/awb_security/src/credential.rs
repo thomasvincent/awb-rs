@@ -212,6 +212,7 @@ impl CredentialPort for FileCredentialStore {
         let lock_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&lock_path)?;
         lock_file.lock_exclusive()?;
 
@@ -232,6 +233,7 @@ impl CredentialPort for FileCredentialStore {
         let lock_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&lock_path)?;
         lock_file.lock_exclusive()?;
 

@@ -133,6 +133,9 @@ pub async fn run(
         BotRunner::new(bot_config, client, engine, pages)
     };
 
+    // Register secrets for redaction in error messages
+    bot_runner.add_secret(password.clone());
+
     let report = match bot_runner.run().await {
         Ok(report) => report,
         Err(e) => {

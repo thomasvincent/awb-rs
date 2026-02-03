@@ -65,10 +65,9 @@ impl Checkpoint {
             file.sync_all()?;
         }
 
-        std::fs::rename(&tmp_path, path).map_err(|e| {
+        std::fs::rename(&tmp_path, path).inspect_err(|_| {
             // Clean up temp file on rename failure
             let _ = std::fs::remove_file(&tmp_path);
-            e
         })?;
 
         // fsync parent directory to ensure directory entry is durable

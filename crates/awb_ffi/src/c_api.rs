@@ -18,12 +18,17 @@ pub extern "C" fn awb_version() -> *const c_char {
 }
 
 /// Frees a string previously returned by awb_version() or other C API functions.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `ptr` is either null or was previously returned by `awb_version()`
+/// - `ptr` has not been freed or modified since it was returned
+/// - This function is only called once per pointer
 #[unsafe(no_mangle)]
-pub extern "C" fn awb_free_string(ptr: *mut c_char) {
+pub unsafe extern "C" fn awb_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = CString::from_raw(ptr);
-        }
+        let _ = CString::from_raw(ptr);
     }
 }
 

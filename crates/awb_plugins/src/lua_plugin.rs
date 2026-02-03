@@ -89,7 +89,7 @@ fn lua_value_to_json_impl(value: &mlua::Value, depth: usize) -> Result<serde_jso
             // Check if it's an array (sequential integer keys starting at 1)
             let len = t.raw_len();
             if len > 0 {
-                let mut arr = Vec::with_capacity(len as usize);
+                let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let v: mlua::Value = t.raw_get(i).map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
                     arr.push(lua_value_to_json_impl(&v, depth + 1)?);

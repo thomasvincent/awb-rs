@@ -4,6 +4,7 @@ use crate::report::{BotReport, PageAction, PageResult};
 use awb_domain::types::Title;
 use awb_engine::transform::TransformEngine;
 use awb_mw_api::client::{EditRequest, MediaWikiClient};
+use awb_mw_api::error::MwApiError;
 use awb_security::redact_secrets;
 use awb_telemetry::TelemetryEvent;
 use chrono::Utc;
@@ -322,63 +323,120 @@ impl<C: MediaWikiClient> BotRunner<C> {
 
         // Save edit (unless dry-run)
         if !self.config.dry_run {
-            let edit_request = EditRequest {
-                title: title.clone(),
-                text: plan.new_wikitext.clone(),
-                summary: plan.summary.clone(),
-                minor: true,
-                bot: true,
-                base_timestamp: page.timestamp.to_rfc3339(),
-                start_timestamp: Utc::now().to_rfc3339(),
-                section: None,
-            };
+            // Retry loop for edit conflicts (max 2 attempts)
+            let max_retries = 1; // 1 retry = 2 total attempts
+            let mut attempt = 0;
 
-            let response = self
-                .client
-                .edit_page(&edit_request)
-                .await
-                .map_err(|e| {
-                    let msg = e.to_string();
-                    let redacted = self.redact_error_message(&msg);
-                    BotError::ApiError(redacted)
-                })?;
+            loop {
+                // Fetch latest page content if this is a retry
+                let current_page = if attempt > 0 {
+                    tracing::debug!("Retrying edit for {} (attempt {})", page_title, attempt + 1);
+                    self.client.get_page(&title).await.map_err(|e| {
+                        let msg = e.to_string();
+                        let redacted = self.redact_error_message(&msg);
+                        BotError::ApiError(redacted)
+                    })?
+                } else {
+                    page.clone()
+                };
 
-            if response.result != "Success" {
-                return Err(BotError::ApiError(format!(
-                    "Edit failed for {}: {}",
-                    page_title, response.result
-                )));
+                // Re-apply transformations if this is a retry (page may have changed)
+                let current_plan = if attempt > 0 {
+                    self.engine.apply(&current_page)
+                } else {
+                    plan.clone()
+                };
+
+                let edit_request = EditRequest {
+                    title: title.clone(),
+                    text: current_plan.new_wikitext.clone(),
+                    summary: current_plan.summary.clone(),
+                    minor: true,
+                    bot: true,
+                    base_timestamp: current_page.timestamp.to_rfc3339(),
+                    start_timestamp: Utc::now().to_rfc3339(),
+                    section: None,
+                };
+
+                let response = self.client.edit_page(&edit_request).await;
+
+                match response {
+                    Ok(resp) => {
+                        if resp.result != "Success" {
+                            return Err(BotError::ApiError(format!(
+                                "Edit failed for {}: {}",
+                                page_title, resp.result
+                            )));
+                        }
+
+                        // Success - break out of retry loop
+                        if attempt > 0 {
+                            tracing::info!("Edit conflict resolved after retry for {}", page_title);
+                        }
+
+                        // Warn if MediaWiki returned "Success" without creating a new revision
+                        if resp.new_revid.is_none() {
+                            tracing::warn!(
+                                "Page {} returned Success but no new_revid - edit may not have been saved",
+                                page_title
+                            );
+                        }
+
+                        let duration = page_start.elapsed().as_millis() as u64;
+                        self.emit_telemetry(TelemetryEvent::PageProcessed {
+                            title: page_title.to_string(),
+                            outcome: "edited".to_string(),
+                            duration_ms: duration,
+                            timestamp: Utc::now(),
+                        });
+
+                        tracing::info!("Saved page {} (rev: {:?})", page_title, resp.new_revid);
+
+                        // Sleep after successful edit to respect rate limits
+                        tokio::time::sleep(self.config.edit_delay).await;
+
+                        return Ok(PageResult {
+                            title: page_title.to_string(),
+                            action: PageAction::Edited,
+                            diff_summary: Some(format!("{} rules applied", current_plan.rules_applied.len())),
+                            warnings,
+                            error: None,
+                            timestamp: Utc::now(),
+                        });
+                    }
+                    Err(MwApiError::EditConflict { base_rev, current_rev }) => {
+                        if attempt >= max_retries {
+                            // Max retries exceeded - skip this page
+                            tracing::warn!(
+                                "Edit conflict persisted after {} attempts for {}: base={:?}, current={:?}",
+                                attempt + 1, page_title, base_rev, current_rev
+                            );
+                            return Ok(PageResult {
+                                title: page_title.to_string(),
+                                action: PageAction::Skipped,
+                                diff_summary: Some("Edit conflict persisted after retry".to_string()),
+                                warnings,
+                                error: None,
+                                timestamp: Utc::now(),
+                            });
+                        }
+
+                        // Retry
+                        tracing::debug!(
+                            "Edit conflict for {}: base={:?}, current={:?}",
+                            page_title, base_rev, current_rev
+                        );
+                        attempt += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        // Other errors - fail immediately
+                        let msg = e.to_string();
+                        let redacted = self.redact_error_message(&msg);
+                        return Err(BotError::ApiError(redacted));
+                    }
+                }
             }
-
-            // Warn if MediaWiki returned "Success" without creating a new revision
-            if response.new_revid.is_none() {
-                tracing::warn!(
-                    "Page {} returned Success but no new_revid - edit may not have been saved",
-                    page_title
-                );
-            }
-
-            let duration = page_start.elapsed().as_millis() as u64;
-            self.emit_telemetry(TelemetryEvent::PageProcessed {
-                title: page_title.to_string(),
-                outcome: "edited".to_string(),
-                duration_ms: duration,
-                timestamp: Utc::now(),
-            });
-
-            tracing::info!("Saved page {} (rev: {:?})", page_title, response.new_revid);
-
-            // Sleep after successful edit to respect rate limits
-            tokio::time::sleep(self.config.edit_delay).await;
-
-            Ok(PageResult {
-                title: page_title.to_string(),
-                action: PageAction::Edited,
-                diff_summary: Some(format!("{} rules applied", plan.rules_applied.len())),
-                warnings,
-                error: None,
-                timestamp: Utc::now(),
-            })
         } else {
             tracing::info!("Dry-run: would edit page {}", page_title);
             Ok(PageResult {
@@ -467,6 +525,7 @@ mod tests {
     use awb_mw_api::error::MwApiError;
     use awb_mw_api::oauth::{OAuth1Config, OAuthSession};
     use std::collections::HashSet;
+    use std::time::Duration;
 
     // Mock MediaWiki client for testing
     struct MockClient {
@@ -893,5 +952,300 @@ mod tests {
             report_json.contains("[REDACTED]"),
             "Report should contain redaction placeholder"
         );
+    }
+
+    #[tokio::test]
+    async fn test_edit_delay_is_respected() {
+        // Mock client that tracks edit timestamps
+        use std::sync::Mutex;
+
+        struct TimingClient {
+            pages: std::collections::HashMap<String, PageContent>,
+            edit_times: Arc<Mutex<Vec<Instant>>>,
+        }
+
+        impl TimingClient {
+            fn new() -> Self {
+                Self {
+                    pages: std::collections::HashMap::new(),
+                    edit_times: Arc::new(Mutex::new(Vec::new())),
+                }
+            }
+
+            fn add_page(&mut self, title: &str, wikitext: &str) {
+                let page = PageContent {
+                    page_id: PageId(1),
+                    title: Title::new(Namespace::MAIN, title),
+                    revision: RevisionId(100),
+                    timestamp: Utc::now(),
+                    wikitext: wikitext.to_string(),
+                    size_bytes: wikitext.len() as u64,
+                    is_redirect: false,
+                    protection: ProtectionInfo::default(),
+                    properties: PageProperties::default(),
+                };
+                self.pages.insert(title.to_string(), page);
+            }
+        }
+
+        #[async_trait]
+        impl MediaWikiClient for TimingClient {
+            async fn login_bot_password(
+                &self,
+                _username: &str,
+                _password: &str,
+            ) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth1(&self, _config: OAuth1Config) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth2(&self, _session: OAuthSession) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn fetch_csrf_token(&self) -> Result<String, MwApiError> {
+                Ok("token".to_string())
+            }
+
+            async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
+                self.pages
+                    .get(&title.display)
+                    .cloned()
+                    .ok_or_else(|| MwApiError::ApiError {
+                        code: "notfound".to_string(),
+                        info: "Page not found".to_string(),
+                    })
+            }
+
+            async fn edit_page(&self, _edit: &EditRequest) -> Result<EditResponse, MwApiError> {
+                // Record the time of this edit
+                self.edit_times.lock().unwrap().push(Instant::now());
+
+                Ok(EditResponse {
+                    result: "Success".to_string(),
+                    new_revid: Some(101),
+                    new_timestamp: Some(Utc::now().to_rfc3339()),
+                })
+            }
+
+            async fn parse_wikitext(
+                &self,
+                _wikitext: &str,
+                _title: &Title,
+            ) -> Result<String, MwApiError> {
+                Ok("<html>parsed</html>".to_string())
+            }
+        }
+
+        // Create config with 1 second delay for faster testing
+        let config = BotConfig::default()
+            .with_edit_delay(Duration::from_secs(1))
+            .with_skip_no_change(false);
+
+        let mut client = TimingClient::new();
+        let edit_times = client.edit_times.clone();
+
+        // Add pages with content that will trigger edits
+        client.add_page("Page1", "test  content"); // double space will be fixed
+        client.add_page("Page2", "test  content"); // double space will be fixed
+
+        let mut ruleset = RuleSet::new();
+        ruleset.add(awb_domain::rules::Rule::new_plain("  ", " ", true));
+
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let mut runner = BotRunner::new(
+            config,
+            client,
+            engine,
+            vec!["Page1".to_string(), "Page2".to_string()],
+        );
+
+        // Run the bot
+        let _report = runner.run().await.unwrap();
+
+        // Verify that we had 2 edits with delay between them
+        let times = edit_times.lock().unwrap();
+        assert_eq!(times.len(), 2, "Should have made 2 edits");
+
+        // Check that the delay between edits is at least 900ms (allowing for timing variance)
+        let delay = times[1].duration_since(times[0]);
+        assert!(
+            delay >= Duration::from_millis(900),
+            "Delay between edits should be at least 900ms, but was {:?}",
+            delay
+        );
+    }
+
+    #[tokio::test]
+    async fn test_edit_conflict_retry_and_resolve() {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        // Mock client that returns EditConflict on first edit, Success on second
+        struct ConflictThenSuccessClient {
+            attempt_count: Arc<RwLock<u32>>,
+        }
+
+        impl ConflictThenSuccessClient {
+            fn new() -> Self {
+                Self {
+                    attempt_count: Arc::new(RwLock::new(0)),
+                }
+            }
+        }
+
+        #[async_trait]
+        impl MediaWikiClient for ConflictThenSuccessClient {
+            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth1(&self, _config: OAuth1Config) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth2(&self, _session: OAuthSession) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn fetch_csrf_token(&self) -> Result<String, MwApiError> {
+                Ok("token".to_string())
+            }
+
+            async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
+                // Return different content on refetch to simulate another edit
+                let attempt = *self.attempt_count.read().await;
+                let wikitext = if attempt == 0 {
+                    "original content"
+                } else {
+                    "content modified by someone else"
+                };
+
+                Ok(PageContent {
+                    page_id: PageId(1),
+                    title: title.clone(),
+                    revision: RevisionId(100 + attempt as u64),
+                    timestamp: Utc::now(),
+                    wikitext: wikitext.to_string(),
+                    size_bytes: wikitext.len() as u64,
+                    is_redirect: false,
+                    protection: ProtectionInfo::default(),
+                    properties: PageProperties::default(),
+                })
+            }
+
+            async fn edit_page(&self, _edit: &EditRequest) -> Result<EditResponse, MwApiError> {
+                let mut count = self.attempt_count.write().await;
+                *count += 1;
+
+                if *count == 1 {
+                    // First attempt: return conflict
+                    Err(MwApiError::EditConflict {
+                        base_rev: RevisionId(100),
+                        current_rev: RevisionId(101),
+                    })
+                } else {
+                    // Second attempt: succeed
+                    Ok(EditResponse {
+                        result: "Success".to_string(),
+                        new_revid: Some(102),
+                        new_timestamp: Some(Utc::now().to_rfc3339()),
+                    })
+                }
+            }
+
+            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+                Ok("<html></html>".to_string())
+            }
+        }
+
+        let config = BotConfig::default().with_skip_no_change(false);
+        let client = ConflictThenSuccessClient::new();
+
+        let mut ruleset = RuleSet::new();
+        // Add a rule that will modify the text
+        ruleset.add(awb_domain::rules::Rule::new_plain("content", "FIXED", true));
+
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["TestPage".to_string()]);
+        let result = runner.process_page("TestPage").await.unwrap();
+
+        // Should succeed after retry
+        assert_eq!(result.action, PageAction::Edited);
+        assert!(result.diff_summary.unwrap().contains("rules applied"));
+    }
+
+    #[tokio::test]
+    async fn test_edit_conflict_retry_twice_then_skip() {
+        // Mock client that always returns EditConflict
+        struct AlwaysConflictClient;
+
+        #[async_trait]
+        impl MediaWikiClient for AlwaysConflictClient {
+            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth1(&self, _config: OAuth1Config) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth2(&self, _session: OAuthSession) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn fetch_csrf_token(&self) -> Result<String, MwApiError> {
+                Ok("token".to_string())
+            }
+
+            async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError> {
+                Ok(PageContent {
+                    page_id: PageId(1),
+                    title: title.clone(),
+                    revision: RevisionId(100),
+                    timestamp: Utc::now(),
+                    wikitext: "some content".to_string(),
+                    size_bytes: 12,
+                    is_redirect: false,
+                    protection: ProtectionInfo::default(),
+                    properties: PageProperties::default(),
+                })
+            }
+
+            async fn edit_page(&self, _edit: &EditRequest) -> Result<EditResponse, MwApiError> {
+                // Always return conflict
+                Err(MwApiError::EditConflict {
+                    base_rev: RevisionId(100),
+                    current_rev: RevisionId(101),
+                })
+            }
+
+            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+                Ok("<html></html>".to_string())
+            }
+        }
+
+        let config = BotConfig::default().with_skip_no_change(false);
+        let client = AlwaysConflictClient;
+
+        let mut ruleset = RuleSet::new();
+        ruleset.add(awb_domain::rules::Rule::new_plain("content", "FIXED", true));
+
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let runner = BotRunner::new(config, client, engine, vec!["TestPage".to_string()]);
+        let result = runner.process_page("TestPage").await.unwrap();
+
+        // Should be skipped after two conflicts
+        assert_eq!(result.action, PageAction::Skipped);
+        assert!(result.diff_summary.unwrap().contains("Edit conflict persisted after retry"));
     }
 }
