@@ -290,18 +290,16 @@ impl<C: MediaWikiClient> BotRunner<C> {
         let plan = self.engine.apply(&page);
 
         // Check for no changes
-        if plan.new_wikitext == page.wikitext {
-            if self.config.skip_no_change {
-                tracing::debug!("Skipping page {} (no changes)", page_title);
-                return Ok(PageResult {
-                    title: page_title.to_string(),
-                    action: PageAction::Skipped,
-                    diff_summary: Some("No changes needed".to_string()),
-                    warnings: vec![],
-                    error: None,
-                    timestamp: Utc::now(),
-                });
-            }
+        if plan.new_wikitext == page.wikitext && self.config.skip_no_change {
+            tracing::debug!("Skipping page {} (no changes)", page_title);
+            return Ok(PageResult {
+                title: page_title.to_string(),
+                action: PageAction::Skipped,
+                diff_summary: Some("No changes needed".to_string()),
+                warnings: vec![],
+                error: None,
+                timestamp: Utc::now(),
+            });
         }
 
         // WP:COSMETIC: skip edits that are cosmetic-only in unattended mode

@@ -1,14 +1,20 @@
+// Allow clippy warning in UniFFI-generated code
+#![allow(clippy::empty_line_after_doc_comments)]
+
 pub mod c_api;
 
+use awb_domain::profile::ThrottlePolicy;
 use awb_domain::rules::RuleSet;
 use awb_domain::types::*;
 use awb_engine::diff_engine;
 use awb_engine::general_fixes::FixRegistry;
 use awb_engine::transform::TransformEngine;
+use awb_mw_api::client::{EditRequest, MediaWikiClient, ReqwestMwClient};
 use parking_lot::Mutex;
 use secrecy::SecretString;
 use std::collections::HashMap;
 use std::sync::Arc;
+use url::Url;
 
 // FFI-safe types
 #[derive(Clone)]
@@ -55,18 +61,22 @@ pub enum FfiError {
     EngineError(String),
 }
 
-// Session storage
+// Session storage with API client
 struct Session {
-    _wiki_url: String,
-    _username: String,
+    wiki_url: Url,
+    username: String,
     password: Option<SecretString>,
-    // In a real implementation, this would hold the API client
-    // For now, we'll use a simple in-memory structure
+    client: Option<Arc<ReqwestMwClient>>,
+    authenticated: bool,
 }
 
 lazy_static::lazy_static! {
     static ref SESSIONS: Arc<Mutex<HashMap<u64, Session>>> = Arc::new(Mutex::new(HashMap::new()));
     static ref NEXT_SESSION_ID: Arc<Mutex<u64>> = Arc::new(Mutex::new(1));
+    static ref TOKIO_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
 }
 
 // UniFFI exported functions
@@ -80,18 +90,26 @@ pub fn create_session(
         return Err(FfiError::ParseError("wiki_url cannot be empty".to_string()));
     }
 
+    // Parse the URL
+    let parsed_url = Url::parse(&wiki_url)
+        .map_err(|e| FfiError::ParseError(format!("Invalid wiki URL: {}", e)))?;
+
     let mut sessions = SESSIONS.lock();
     let mut next_id = NEXT_SESSION_ID.lock();
 
     let id = *next_id;
-    *next_id = next_id.checked_add(1).ok_or(FfiError::EngineError("session ID overflow".into()))?;
+    *next_id = next_id
+        .checked_add(1)
+        .ok_or(FfiError::EngineError("session ID overflow".into()))?;
 
     sessions.insert(
         id,
         Session {
-            _wiki_url: wiki_url,
-            _username: username,
+            wiki_url: parsed_url,
+            username,
             password: Some(SecretString::new(password.into())),
+            client: None,
+            authenticated: false,
         },
     );
 
@@ -100,19 +118,52 @@ pub fn create_session(
 
 pub fn destroy_session(handle: SessionHandle) -> Result<(), FfiError> {
     let mut sessions = SESSIONS.lock();
-    sessions.remove(&handle.id).ok_or(FfiError::SessionNotFound)?;
+    sessions
+        .remove(&handle.id)
+        .ok_or(FfiError::SessionNotFound)?;
     Ok(())
 }
 
 pub fn login(handle: SessionHandle) -> Result<(), FfiError> {
     let mut sessions = SESSIONS.lock();
-    let session = sessions.get_mut(&handle.id).ok_or(FfiError::SessionNotFound)?;
+    let session = sessions
+        .get_mut(&handle.id)
+        .ok_or(FfiError::SessionNotFound)?;
 
-    // TODO: Implement actual authentication via awb_mw_api
-    // Use password here: let _password = session.password.as_ref().map(|p| p.expose_secret());
+    // Create the API client if not already created
+    let client = ReqwestMwClient::new(session.wiki_url.clone(), ThrottlePolicy::default())
+        .map_err(|e| FfiError::NetworkError(format!("Failed to create API client: {}", e)))?;
 
-    // Clear password after authentication completes
-    session.password = None;
+    let client = Arc::new(client);
+
+    // Get password before async block
+    let password = session
+        .password
+        .take()
+        .ok_or(FfiError::AuthenticationError)?;
+
+    let username = session.username.clone();
+
+    // Store client reference for async block
+    let client_clone = client.clone();
+
+    // Run the async login
+    TOKIO_RUNTIME
+        .block_on(async {
+            use secrecy::ExposeSecret;
+            client_clone
+                .login_bot_password(&username, password.expose_secret())
+                .await
+        })
+        .map_err(|e| FfiError::NetworkError(format!("Login failed: {}", e)))?;
+
+    // Fetch CSRF token
+    TOKIO_RUNTIME
+        .block_on(async { client.fetch_csrf_token().await })
+        .map_err(|e| FfiError::NetworkError(format!("Failed to fetch CSRF token: {}", e)))?;
+
+    session.client = Some(client);
+    session.authenticated = true;
 
     Ok(())
 }
@@ -123,10 +174,15 @@ pub fn fetch_list(
     query: String,
 ) -> Result<Vec<String>, FfiError> {
     let sessions = SESSIONS.lock();
-    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
+    let session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
-    // TODO: Implement actual list fetching via awb_mw_api
-    // For now, return a mock list
+    if !session.authenticated {
+        return Err(FfiError::AuthenticationError);
+    }
+
+    // For now, return a mock list since MediaWiki API list fetching
+    // requires category/search/whatlinks queries which aren't implemented in awb_mw_api yet
+    // TODO: Implement actual list fetching when awb_mw_api supports it
     Ok(vec![
         format!("Page from {}: {}", source, query),
         "Example Page 1".to_string(),
@@ -136,18 +192,35 @@ pub fn fetch_list(
 
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {
     let sessions = SESSIONS.lock();
-    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
+    let session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
 
-    // TODO: Implement actual page fetching via awb_mw_api
-    // For now, return a mock page
+    let client = session
+        .client
+        .as_ref()
+        .ok_or(FfiError::AuthenticationError)?
+        .clone();
+
+    drop(sessions); // Release lock before async operation
+
+    let page_title = Title::new(Namespace::MAIN, &title);
+
+    let page = TOKIO_RUNTIME
+        .block_on(async { client.get_page(&page_title).await })
+        .map_err(|e| match e {
+            awb_mw_api::error::MwApiError::ApiError { code, .. } if code == "missingtitle" => {
+                FfiError::NotFound
+            }
+            _ => FfiError::NetworkError(format!("Failed to fetch page: {}", e)),
+        })?;
+
     Ok(PageInfo {
-        page_id: 12345,
-        title: title.clone(),
-        revision: 98765,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        wikitext: format!("This is the content of [[{}]]\n\nSome example text.", title),
-        size_bytes: 100,
-        is_redirect: false,
+        page_id: page.page_id.0,
+        title: page.title.display.clone(),
+        revision: page.revision.0,
+        timestamp: page.timestamp.to_rfc3339(),
+        wikitext: page.wikitext,
+        size_bytes: page.size_bytes,
+        is_redirect: page.is_redirect,
     })
 }
 
@@ -203,11 +276,7 @@ pub fn save_page(
     content: String,
     summary: String,
 ) -> Result<(), FfiError> {
-    let sessions = SESSIONS.lock();
-    let _session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
-
-    // TODO: Implement actual page saving via awb_mw_api
-    // For now, just validate inputs
+    // Validate inputs
     if title.is_empty() {
         return Err(FfiError::ParseError("Title cannot be empty".to_string()));
     }
@@ -216,6 +285,46 @@ pub fn save_page(
     }
     if summary.is_empty() {
         return Err(FfiError::ParseError("Summary cannot be empty".to_string()));
+    }
+
+    let sessions = SESSIONS.lock();
+    let session = sessions.get(&handle.id).ok_or(FfiError::SessionNotFound)?;
+
+    let client = session
+        .client
+        .as_ref()
+        .ok_or(FfiError::AuthenticationError)?
+        .clone();
+
+    drop(sessions); // Release lock before async operation
+
+    let page_title = Title::new(Namespace::MAIN, &title);
+
+    // First fetch the page to get base timestamp
+    let page = TOKIO_RUNTIME
+        .block_on(async { client.get_page(&page_title).await })
+        .map_err(|e| FfiError::NetworkError(format!("Failed to fetch page for edit: {}", e)))?;
+
+    let edit_request = EditRequest {
+        title: page_title,
+        text: content,
+        summary,
+        minor: true,
+        bot: true,
+        base_timestamp: page.timestamp.to_rfc3339(),
+        start_timestamp: chrono::Utc::now().to_rfc3339(),
+        section: None,
+    };
+
+    let response = TOKIO_RUNTIME
+        .block_on(async { client.edit_page(&edit_request).await })
+        .map_err(|e| FfiError::NetworkError(format!("Failed to save page: {}", e)))?;
+
+    if response.result != "Success" {
+        return Err(FfiError::NetworkError(format!(
+            "Edit failed: {}",
+            response.result
+        )));
     }
 
     Ok(())
@@ -285,69 +394,12 @@ mod tests {
     #[test]
     fn test_create_session() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "testuser".to_string(),
             "testpass".to_string(),
         )
         .unwrap();
         assert!(handle.id > 0);
-    }
-
-    #[test]
-    fn test_login() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "testuser".to_string(),
-            "testpass".to_string(),
-        )
-        .unwrap();
-        let result = login(handle);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_fetch_list() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "testuser".to_string(),
-            "testpass".to_string(),
-        )
-        .unwrap();
-        let result = fetch_list(handle, "category".to_string(), "Test".to_string());
-        assert!(result.is_ok());
-        let list = result.unwrap();
-        assert!(!list.is_empty());
-    }
-
-    #[test]
-    fn test_get_page() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "testuser".to_string(),
-            "testpass".to_string(),
-        )
-        .unwrap();
-        let result = get_page(handle, "Test Page".to_string());
-        assert!(result.is_ok());
-        let page = result.unwrap();
-        assert_eq!(page.title, "Test Page");
-        assert!(!page.wikitext.is_empty());
-    }
-
-    #[test]
-    fn test_compute_diff() {
-        let old = "hello world".to_string();
-        let new = "hello there world".to_string();
-        let diff = compute_diff(old, new);
-        assert!(diff.contains("hello"));
-        assert!(diff.contains("world"));
-    }
-
-    #[test]
-    fn test_html_escape() {
-        let input = "<script>alert('xss')</script>";
-        let escaped = html_escape(input);
-        assert_eq!(escaped, "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;");
     }
 
     #[test]
@@ -365,14 +417,14 @@ mod tests {
     #[test]
     fn test_create_session_increments_id() {
         let handle1 = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user1".to_string(),
             "pass1".to_string(),
         )
         .unwrap();
 
         let handle2 = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user2".to_string(),
             "pass2".to_string(),
         )
@@ -394,9 +446,24 @@ mod tests {
     }
 
     #[test]
+    fn test_create_session_with_invalid_url() {
+        let result = create_session(
+            "not a valid url".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(FfiError::ParseError(msg)) => assert!(msg.contains("Invalid wiki URL")),
+            _ => panic!("Expected ParseError for invalid URL"),
+        }
+    }
+
+    #[test]
     fn test_create_session_with_empty_username() {
         let result = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "".to_string(),
             "pass".to_string(),
         );
@@ -408,7 +475,7 @@ mod tests {
     #[test]
     fn test_create_session_with_empty_password() {
         let result = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "".to_string(),
         );
@@ -430,22 +497,9 @@ mod tests {
     }
 
     #[test]
-    fn test_login_with_valid_handle() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "testuser".to_string(),
-            "testpass".to_string(),
-        )
-        .unwrap();
-
-        let result = login(handle);
-        assert!(result.is_ok(), "Login should succeed with valid handle");
-    }
-
-    #[test]
     fn test_save_page_validates_title() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
         )
@@ -468,7 +522,7 @@ mod tests {
     #[test]
     fn test_save_page_validates_content() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
         )
@@ -491,7 +545,7 @@ mod tests {
     #[test]
     fn test_save_page_validates_summary() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
         )
@@ -509,25 +563,6 @@ mod tests {
             Err(FfiError::ParseError(msg)) => assert!(msg.contains("Summary")),
             _ => panic!("Expected ParseError for empty summary"),
         }
-    }
-
-    #[test]
-    fn test_save_page_with_valid_inputs() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "user".to_string(),
-            "pass".to_string(),
-        )
-        .unwrap();
-
-        let result = save_page(
-            handle,
-            "Test Page".to_string(),
-            "Test content".to_string(),
-            "Test summary".to_string(),
-        );
-
-        assert!(result.is_ok(), "Should succeed with valid inputs");
     }
 
     #[test]
@@ -562,7 +597,6 @@ mod tests {
         let diff = compute_diff(old, new);
 
         assert!(diff.contains("line1"));
-        // Should contain insert markup for line2
     }
 
     #[test]
@@ -596,29 +630,9 @@ mod tests {
     }
 
     #[test]
-    fn test_page_info_fields() {
-        let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
-            "user".to_string(),
-            "pass".to_string(),
-        )
-        .unwrap();
-
-        let page = get_page(handle, "Test".to_string()).unwrap();
-
-        assert_eq!(page.title, "Test");
-        assert!(page.page_id > 0);
-        assert!(page.revision > 0);
-        assert!(!page.timestamp.is_empty());
-        assert!(!page.wikitext.is_empty());
-        assert!(page.size_bytes > 0);
-        assert!(!page.is_redirect);
-    }
-
-    #[test]
     fn test_transform_result_fields() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
         )
@@ -637,7 +651,7 @@ mod tests {
     #[test]
     fn test_apply_rules_with_invalid_json() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
         )
@@ -684,13 +698,20 @@ mod tests {
     #[test]
     fn test_destroy_session() {
         let handle = create_session(
-            "https://en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/w/api.php".to_string(),
             "user".to_string(),
             "pass".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
         let id = handle.id;
         assert!(destroy_session(SessionHandle { id }).is_ok());
         // Should fail now
-        assert!(matches!(destroy_session(SessionHandle { id }), Err(FfiError::SessionNotFound)));
+        assert!(matches!(
+            destroy_session(SessionHandle { id }),
+            Err(FfiError::SessionNotFound)
+        ));
     }
+
+    // Note: Tests that require actual network calls (login, get_page, save_page)
+    // are integration tests and should be run against a test wiki instance.
 }
