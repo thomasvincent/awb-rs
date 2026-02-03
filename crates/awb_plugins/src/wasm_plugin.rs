@@ -265,21 +265,57 @@ mod tests {
         assert_eq!(result, "HELLO WORLD");
     }
 
+    // Helper to create a WASM module that consumes excessive fuel
+    fn create_expensive_wasm() -> Vec<u8> {
+        // WAT module with a long-running loop
+        let wat = r#"
+            (module
+                (memory (export "memory") 1)
+
+                (func (export "alloc") (param $size i32) (result i32)
+                    (i32.const 1024)
+                )
+
+                ;; Transform that runs a million iterations
+                (func (export "transform") (param $ptr i32) (param $len i32) (result i32)
+                    (local $i i32)
+                    (local $result_ptr i32)
+
+                    ;; Run expensive loop
+                    (local.set $i (i32.const 0))
+                    (block $done
+                        (loop $loop
+                            (br_if $done (i32.ge_u (local.get $i) (i32.const 1000000)))
+                            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                            (br $loop)
+                        )
+                    )
+
+                    ;; Allocate result
+                    (local.set $result_ptr (i32.const 2048))
+                    (i32.store (local.get $result_ptr) (i32.const 2))
+                    (i32.store8 (i32.add (local.get $result_ptr) (i32.const 4)) (i32.const 111))
+                    (i32.store8 (i32.add (local.get $result_ptr) (i32.const 5)) (i32.const 107))
+                    (local.get $result_ptr)
+                )
+            )
+        "#;
+        wat::parse_str(wat).unwrap()
+    }
+
     #[test]
     fn test_wasm_fuel_limiting() {
-        let wasm_bytes = create_test_wasm_uppercase();
+        let wasm_bytes = create_expensive_wasm();
         let config = SandboxConfig {
-            wasm_fuel: 1000, // Very low fuel limit
+            wasm_fuel: 100, // Very low fuel limit - insufficient for 1M iterations
             ..Default::default()
         };
 
         let plugin = WasmPlugin::from_bytes("limited", &wasm_bytes, config).unwrap();
 
-        // Small input should work
-        let result = plugin.transform("hi");
-        // Depending on fuel consumption, this might succeed or fail
-        // This test mainly ensures the fuel system is active
-        assert!(result.is_err() || result.is_ok());
+        // This MUST fail due to fuel exhaustion
+        let result = plugin.transform("test");
+        assert!(result.is_err(), "Expected fuel exhaustion error, but transform succeeded");
     }
 
     #[test]
@@ -304,5 +340,35 @@ mod tests {
             let p = plugin.unwrap();
             p.transform("test").is_err()
         });
+    }
+
+    #[test]
+    fn test_wasm_arbitrary_import_rejection() {
+        // A WASM module that tries to import arbitrary host functions should fail
+        let wat = r#"
+            (module
+                (import "env" "system" (func $system (param i32) (result i32)))
+                (memory (export "memory") 1)
+                (func (export "alloc") (param i32) (result i32) (i32.const 0))
+                (func (export "transform") (param i32 i32) (result i32)
+                    (i32.const 0)
+                )
+            )
+        "#;
+        let wasm_bytes = wat::parse_str(wat).unwrap();
+        let plugin = WasmPlugin::from_bytes("dangerous", &wasm_bytes, SandboxConfig::default());
+
+        // Module creation may succeed, but instantiation (during transform) must fail
+        // because env.system is not provided by the linker
+        match plugin {
+            Err(_) => {
+                // Failed at module creation - acceptable
+            }
+            Ok(p) => {
+                // Module created, but transform should fail at instantiation
+                let result = p.transform("test");
+                assert!(result.is_err(), "Expected instantiation to fail due to missing import env.system");
+            }
+        }
     }
 }

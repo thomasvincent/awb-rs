@@ -17,6 +17,25 @@ pub enum CredentialError {
     Serialization(#[from] serde_json::Error),
 }
 
+/// Reject writes to symlink targets to prevent symlink swap attacks.
+///
+/// Note: This is a best-effort TOCTOU check. Between the symlink_metadata call
+/// and the subsequent file operation, a race is theoretically possible. On Unix,
+/// using O_NOFOLLOW at open time would be stronger, but std::fs doesn't expose
+/// that consistently. For our use case (credential files in a controlled directory),
+/// this is sufficient.
+fn reject_symlink(path: &std::path::Path) -> Result<(), CredentialError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            Err(CredentialError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("Refusing to access symlink: {}", path.display()),
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Trait for OS-specific credential storage.
 pub trait CredentialPort: Send + Sync {
     fn get_password(&self, profile_id: &str) -> Result<String, CredentialError>;
@@ -115,6 +134,7 @@ impl FileCredentialStore {
             return Ok(std::collections::HashMap::new());
         }
 
+        reject_symlink(&self.credentials_path)?;
         let contents = std::fs::read_to_string(&self.credentials_path)?;
         let map: std::collections::HashMap<String, String> = serde_json::from_str(&contents)?;
         Ok(map)
@@ -125,6 +145,7 @@ impl FileCredentialStore {
         &self,
         credentials: &std::collections::HashMap<String, String>,
     ) -> Result<(), CredentialError> {
+        reject_symlink(&self.credentials_path)?;
         let json = serde_json::to_string_pretty(credentials)?;
 
         // Atomically create file with secure permissions on Unix
@@ -135,6 +156,7 @@ impl FileCredentialStore {
 
             // Write to a temporary file first
             let tmp_path = self.credentials_path.with_extension("tmp");
+            reject_symlink(&tmp_path)?;
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
@@ -154,6 +176,7 @@ impl FileCredentialStore {
         #[cfg(not(unix))]
         {
             let tmp_path = self.credentials_path.with_extension("tmp");
+            reject_symlink(&tmp_path)?;
             std::fs::write(&tmp_path, &json)?;
             tracing::warn!(
                 path = %self.credentials_path.display(),
@@ -491,6 +514,51 @@ mod tests {
         // Load from nonexistent file should return empty map
         let credentials = store.load().unwrap();
         assert!(credentials.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_file_credential_store_rejects_symlink() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let target_file = temp_dir.path().join("target.json");
+        let credentials_path = temp_dir.path().join("credentials.json");
+
+        // Create a target file
+        std::fs::write(&target_file, "{}").unwrap();
+
+        // Create a symlink at credentials_path pointing to target_file
+        std::os::unix::fs::symlink(&target_file, &credentials_path).unwrap();
+
+        let store = FileCredentialStore {
+            credentials_path: credentials_path.clone(),
+        };
+
+        // Attempt to set a password should fail due to symlink
+        let result = store.set_password("test_profile", "secret");
+        assert!(result.is_err(), "Should reject symlink on write");
+        match result {
+            Err(CredentialError::Io(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+                assert!(e.to_string().contains("symlink"));
+            }
+            _ => panic!("Expected IO error with PermissionDenied"),
+        }
+
+        // Write a valid credential to the target file directly
+        std::fs::write(&target_file, r#"{"test_profile":"secret"}"#).unwrap();
+
+        // Attempt to load should also fail due to symlink
+        let result = store.get_password("test_profile");
+        assert!(result.is_err(), "Should reject symlink on read");
+        match result {
+            Err(CredentialError::Io(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+                assert!(e.to_string().contains("symlink"));
+            }
+            _ => panic!("Expected IO error with PermissionDenied"),
+        }
     }
 
     // --- KeyringCredentialStore Tests ---

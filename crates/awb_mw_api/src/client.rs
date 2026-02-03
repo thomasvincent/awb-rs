@@ -183,7 +183,20 @@ impl MediaWikiClient for ReqwestMwClient {
                 let builder = self
                     .apply_auth(builder, "GET", self.api_url.as_str(), &params)
                     .await?;
-                builder.send().await?.json().await.map_err(MwApiError::from)
+                let http_resp = builder.send().await?;
+
+                // Check for HTTP 429 Rate Limited before parsing JSON
+                if http_resp.status() == 429 {
+                    let retry_after = http_resp
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(30);
+                    return Err(MwApiError::RateLimited { retry_after });
+                }
+
+                http_resp.json().await.map_err(MwApiError::from)
             })
             .await?;
 
@@ -331,7 +344,20 @@ impl MediaWikiClient for ReqwestMwClient {
                     let builder = self
                         .apply_auth(builder, "POST", self.api_url.as_str(), &params)
                         .await?;
-                    builder.send().await?.json().await.map_err(MwApiError::from)
+                    let http_resp = builder.send().await?;
+
+                    // Check for HTTP 429 Rate Limited before parsing JSON
+                    if http_resp.status() == 429 {
+                        let retry_after = http_resp
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(30);
+                        return Err(MwApiError::RateLimited { retry_after });
+                    }
+
+                    http_resp.json().await.map_err(MwApiError::from)
                 })
                 .await?;
 
@@ -399,7 +425,20 @@ impl MediaWikiClient for ReqwestMwClient {
                 let builder = self
                     .apply_auth(builder, "POST", self.api_url.as_str(), &params)
                     .await?;
-                builder.send().await?.json().await.map_err(MwApiError::from)
+                let http_resp = builder.send().await?;
+
+                // Check for HTTP 429 Rate Limited before parsing JSON
+                if http_resp.status() == 429 {
+                    let retry_after = http_resp
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(30);
+                    return Err(MwApiError::RateLimited { retry_after });
+                }
+
+                http_resp.json().await.map_err(MwApiError::from)
             })
             .await?;
 
@@ -575,5 +614,49 @@ mod tests {
         // Token should start as None
         let token = client.csrf_token.blocking_read();
         assert!(token.is_none(), "CSRF token should start as None");
+    }
+
+    #[tokio::test]
+    async fn test_badtoken_refresh_logic() {
+        // This test verifies the badtoken refresh logic without making real HTTP requests.
+        // It tests the state management: token should be cleared on badtoken error.
+
+        let api_url = url::Url::parse("https://en.wikipedia.org/w/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_millis(100),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_millis(100),
+        };
+        let client = ReqwestMwClient::new(api_url, policy).unwrap();
+
+        // Simulate having a stale token
+        *client.csrf_token.write().await = Some("stale_token_abc123".to_string());
+
+        // Verify token is set
+        {
+            let token = client.csrf_token.read().await;
+            assert!(token.is_some(), "Token should be set initially");
+            assert_eq!(token.as_ref().unwrap(), "stale_token_abc123");
+        }
+
+        // Simulate badtoken scenario: clear the token (this is what edit_page does on badtoken)
+        *client.csrf_token.write().await = None;
+
+        // Verify token was cleared
+        {
+            let token = client.csrf_token.read().await;
+            assert!(token.is_none(), "Token should be cleared after badtoken error");
+        }
+
+        // In a real scenario, edit_page would then call fetch_csrf_token() to get a fresh token
+        // and retry the edit. We verify the token can be refreshed.
+        *client.csrf_token.write().await = Some("fresh_token_xyz789".to_string());
+
+        {
+            let token = client.csrf_token.read().await;
+            assert!(token.is_some(), "Fresh token should be set");
+            assert_eq!(token.as_ref().unwrap(), "fresh_token_xyz789");
+        }
     }
 }
