@@ -65,6 +65,10 @@ pub struct EditPlan {
     pub diff_ops: Vec<DiffOp>,
     pub summary: String,
     pub warnings: Vec<Warning>,
+    /// True if the only changes are cosmetic (whitespace, heading spacing, trailing whitespace).
+    /// Used to enforce WP:COSMETIC — bots should not make cosmetic-only edits.
+    #[serde(default)]
+    pub is_cosmetic_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

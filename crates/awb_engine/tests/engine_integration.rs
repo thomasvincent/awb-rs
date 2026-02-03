@@ -142,6 +142,7 @@ fn test_review_state_machine_complete_cycle() {
             diff_ops: vec![],
             summary: format!("Edit {}", i + 1),
             warnings: vec![],
+            is_cosmetic_only: false,
         };
         let effects = machine.transition(ReviewEvent::RulesApplied(plan.clone()));
         assert!(matches!(

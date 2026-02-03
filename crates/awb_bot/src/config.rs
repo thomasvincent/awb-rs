@@ -26,6 +26,11 @@ pub struct BotConfig {
     /// Dry-run mode - show diffs without saving
     pub dry_run: bool,
 
+    /// Skip edits that are cosmetic-only (WP:COSMETIC compliance).
+    /// Default: true — bots should not make cosmetic-only edits unattended.
+    #[serde(default = "default_skip_cosmetic_only")]
+    pub skip_cosmetic_only: bool,
+
     /// Bot username for {{bots}}/{{nobots}} policy compliance
     pub bot_name: String,
 
@@ -53,6 +58,10 @@ fn default_save_every_n() -> u32 {
     25
 }
 
+fn default_skip_cosmetic_only() -> bool {
+    true
+}
+
 impl Default for BotConfig {
     fn default() -> Self {
         Self {
@@ -60,9 +69,14 @@ impl Default for BotConfig {
             max_runtime: None,
             skip_no_change: true,
             skip_on_warning: false,
-            emergency_stop_file: PathBuf::from("/tmp/awb-rs-stop"),
+            emergency_stop_file: std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".awb-rs")
+                .join("stop"),
             log_every_n: 10,
             dry_run: false,
+            skip_cosmetic_only: default_skip_cosmetic_only(),
             bot_name: "AWB-RS".to_string(),
             allowed_namespaces: {
                 let mut ns = std::collections::HashSet::new();
