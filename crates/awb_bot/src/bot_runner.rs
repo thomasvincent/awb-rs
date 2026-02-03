@@ -4,6 +4,7 @@ use crate::report::{BotReport, PageAction, PageResult};
 use awb_domain::types::Title;
 use awb_engine::transform::TransformEngine;
 use awb_mw_api::client::{EditRequest, MediaWikiClient};
+use awb_security::redact_secrets;
 use awb_telemetry::TelemetryEvent;
 use chrono::Utc;
 use std::path::Path;
@@ -46,6 +47,7 @@ pub struct BotRunner<C: MediaWikiClient> {
     checkpoint: Checkpoint,
     report: BotReport,
     start_instant: Instant,
+    secrets: Vec<String>,
 }
 
 impl<C: MediaWikiClient> BotRunner<C> {
@@ -60,7 +62,19 @@ impl<C: MediaWikiClient> BotRunner<C> {
             checkpoint: Checkpoint::new(),
             report: BotReport::new(start_time),
             start_instant: Instant::now(),
+            secrets: Vec::new(),
         }
+    }
+
+    /// Add a secret to be redacted from error messages
+    pub fn add_secret(&mut self, secret: String) {
+        self.secrets.push(secret);
+    }
+
+    /// Redact known secrets from an error message
+    fn redact_error_message(&self, message: &str) -> String {
+        let secret_refs: Vec<&str> = self.secrets.iter().map(|s| s.as_str()).collect();
+        redact_secrets(message, &secret_refs)
     }
 
     /// Create a bot runner with existing checkpoint
@@ -80,6 +94,7 @@ impl<C: MediaWikiClient> BotRunner<C> {
             checkpoint,
             report: BotReport::new(start_time),
             start_instant: Instant::now(),
+            secrets: Vec::new(),
         }
     }
 
@@ -136,13 +151,15 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         .record_page(page_title.clone(), edited, skipped, errored);
                 }
                 Err(e) => {
-                    tracing::error!("Error processing page {}: {}", page_title, e);
+                    let error_msg = e.to_string();
+                    let redacted_msg = self.redact_error_message(&error_msg);
+                    tracing::error!("Error processing page {}: {}", page_title, redacted_msg);
                     let result = PageResult {
                         title: page_title.clone(),
                         action: PageAction::Errored,
                         diff_summary: None,
                         warnings: vec![],
-                        error: Some(e.to_string()),
+                        error: Some(redacted_msg),
                         timestamp: Utc::now(),
                     };
                     self.report.record_page(result);
@@ -221,7 +238,11 @@ impl<C: MediaWikiClient> BotRunner<C> {
             .client
             .get_page(&title)
             .await
-            .map_err(|e| BotError::ApiError(e.to_string()))?;
+            .map_err(|e| {
+                let msg = e.to_string();
+                let redacted = self.redact_error_message(&msg);
+                BotError::ApiError(redacted)
+            })?;
 
         // Check {{bots}}/{{nobots}} policy before transforming
         let policy_result =
@@ -316,7 +337,11 @@ impl<C: MediaWikiClient> BotRunner<C> {
                 .client
                 .edit_page(&edit_request)
                 .await
-                .map_err(|e| BotError::ApiError(e.to_string()))?;
+                .map_err(|e| {
+                    let msg = e.to_string();
+                    let redacted = self.redact_error_message(&msg);
+                    BotError::ApiError(redacted)
+                })?;
 
             if response.result != "Success" {
                 return Err(BotError::ApiError(format!(
@@ -703,5 +728,170 @@ mod tests {
 
         assert_eq!(result.action, PageAction::Skipped);
         assert!(result.diff_summary.unwrap().contains("Namespace"));
+    }
+
+    #[tokio::test]
+    async fn test_secret_redaction_in_error_messages() {
+        let config = BotConfig::default();
+        let client = MockClient::new();
+
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let mut runner = BotRunner::new(config, client, engine, vec!["NonexistentPage".to_string()]);
+
+        // Add a secret that might appear in API errors
+        runner.add_secret("mysecret123456".to_string());
+
+        // Process a page that doesn't exist to trigger an error
+        let result = runner.process_page("NonexistentPage").await;
+
+        // The error should occur but not contain the raw secret
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+
+        // Verify the error message doesn't contain the secret
+        assert!(!error_msg.contains("mysecret123456"), "Secret should be redacted from error message");
+    }
+
+    #[tokio::test]
+    async fn test_secret_redaction_in_page_result() {
+        // Mock client that returns API errors containing secrets
+        struct SecretLeakingClient;
+
+        #[async_trait]
+        impl MediaWikiClient for SecretLeakingClient {
+            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth1(&self, _config: OAuth1Config) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth2(&self, _session: OAuthSession) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn fetch_csrf_token(&self) -> Result<String, MwApiError> {
+                Ok("token".to_string())
+            }
+
+            async fn get_page(&self, _title: &Title) -> Result<PageContent, MwApiError> {
+                // Return error containing a secret
+                Err(MwApiError::ApiError {
+                    code: "auth_error".to_string(),
+                    info: "Authentication failed with token=secret987654321".to_string(),
+                })
+            }
+
+            async fn edit_page(&self, _edit: &EditRequest) -> Result<EditResponse, MwApiError> {
+                Ok(EditResponse {
+                    result: "Success".to_string(),
+                    new_revid: Some(1),
+                    new_timestamp: Some(Utc::now().to_rfc3339()),
+                })
+            }
+
+            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+                Ok("<html></html>".to_string())
+            }
+        }
+
+        let config = BotConfig::default();
+        let client = SecretLeakingClient;
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let mut runner = BotRunner::new(config, client, engine, vec!["TestPage".to_string()]);
+        runner.add_secret("secret987654321".to_string());
+
+        let result = runner.process_page("TestPage").await;
+
+        // Should fail due to API error
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let error_msg = err.to_string();
+
+        // Verify secret is redacted
+        assert!(!error_msg.contains("secret987654321"), "Secret should be redacted from error message");
+        assert!(error_msg.contains("[REDACTED]"), "Redacted placeholder should be present");
+    }
+
+    #[tokio::test]
+    async fn test_secret_redaction_end_to_end_in_report() {
+        // Mock client that leaks secrets in errors
+        struct SecretLeakingClient;
+
+        #[async_trait]
+        impl MediaWikiClient for SecretLeakingClient {
+            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth1(&self, _config: OAuth1Config) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn login_oauth2(&self, _session: OAuthSession) -> Result<(), MwApiError> {
+                Ok(())
+            }
+
+            async fn fetch_csrf_token(&self) -> Result<String, MwApiError> {
+                Ok("token".to_string())
+            }
+
+            async fn get_page(&self, _title: &Title) -> Result<PageContent, MwApiError> {
+                Err(MwApiError::ApiError {
+                    code: "forbidden".to_string(),
+                    info: "Access denied for user with password=mypassword12345678".to_string(),
+                })
+            }
+
+            async fn edit_page(&self, _edit: &EditRequest) -> Result<EditResponse, MwApiError> {
+                Ok(EditResponse {
+                    result: "Success".to_string(),
+                    new_revid: Some(1),
+                    new_timestamp: Some(Utc::now().to_rfc3339()),
+                })
+            }
+
+            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+                Ok("<html></html>".to_string())
+            }
+        }
+
+        let config = BotConfig::default();
+        let client = SecretLeakingClient;
+        let ruleset = RuleSet::new();
+        let registry = FixRegistry::new();
+        let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
+
+        let mut runner = BotRunner::new(
+            config,
+            client,
+            engine,
+            vec!["Page1".to_string(), "Page2".to_string()],
+        );
+        runner.add_secret("mypassword12345678".to_string());
+
+        // Run the bot - it will fail to fetch pages but record errors
+        let report = runner.run().await.unwrap();
+
+        // Verify that both pages errored
+        assert_eq!(report.pages_errored, 2);
+
+        // Check that the report contains redacted errors, not raw secrets
+        let report_json = serde_json::to_string(&report).unwrap();
+        assert!(
+            !report_json.contains("mypassword12345678"),
+            "Report should not contain raw secret"
+        );
+        assert!(
+            report_json.contains("[REDACTED]"),
+            "Report should contain redaction placeholder"
+        );
     }
 }

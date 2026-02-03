@@ -191,4 +191,37 @@ mod tests {
         let result = Checkpoint::load(Path::new("/nonexistent/checkpoint.json"));
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_checkpoint_load_from_disk_resume() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let checkpoint_path = temp_dir.path().join("resume_checkpoint.json");
+
+        // Create checkpoint with completed pages
+        let mut checkpoint = Checkpoint::new();
+        checkpoint.record_page("CompletedPage1".to_string(), true, false, false);
+        checkpoint.record_page("CompletedPage2".to_string(), false, true, false);
+        checkpoint.record_page("CompletedPage3".to_string(), false, false, true);
+
+        // Save to disk
+        checkpoint.save(&checkpoint_path)?;
+
+        // Load from disk
+        let loaded = Checkpoint::load(&checkpoint_path)?;
+
+        // Verify HashSet was correctly rebuilt
+        assert!(loaded.is_completed("CompletedPage1"));
+        assert!(loaded.is_completed("CompletedPage2"));
+        assert!(loaded.is_completed("CompletedPage3"));
+        assert!(!loaded.is_completed("NotCompletedPage"));
+
+        // Verify statistics were preserved
+        assert_eq!(loaded.pages_edited, 1);
+        assert_eq!(loaded.pages_skipped, 1);
+        assert_eq!(loaded.pages_errored, 1);
+        assert_eq!(loaded.last_processed_index, 3);
+        assert_eq!(loaded.completed_pages.len(), 3);
+
+        Ok(())
+    }
 }
