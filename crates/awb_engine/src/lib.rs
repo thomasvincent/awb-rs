@@ -1,5 +1,6 @@
 pub mod category;
 pub mod diff_engine;
+pub mod fix_config;
 pub mod general_fixes;
 pub mod review;
 pub mod skip;

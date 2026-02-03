@@ -1,3 +1,4 @@
+use crate::fix_config::{ApplyResult, FixClassification, FixConfig, FixConfigError};
 use awb_domain::types::{Namespace, Title};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -17,6 +18,14 @@ pub trait FixModule: Send + Sync {
     fn apply<'a>(&self, text: &'a str, context: &FixContext) -> Cow<'a, str>;
     fn default_enabled(&self) -> bool {
         true
+    }
+    /// The classification of changes this module makes.
+    fn classification(&self) -> FixClassification {
+        FixClassification::Maintenance
+    }
+    /// Minimum strictness tier required to run this module (0-3).
+    fn min_tier(&self) -> u8 {
+        1
     }
 }
 
@@ -85,6 +94,60 @@ impl FixRegistry {
     pub fn all_modules(&self) -> &[Box<dyn FixModule>] {
         &self.modules
     }
+
+    /// Returns the set of all known fix IDs.
+    pub fn known_ids(&self) -> HashSet<&str> {
+        self.modules.iter().map(|m| m.id()).collect()
+    }
+
+    /// Apply fixes filtered by a `FixConfig`.
+    ///
+    /// Returns an error if the config references unknown fix IDs.
+    pub fn apply_all_with_config(
+        &self,
+        text: &str,
+        ctx: &FixContext,
+        config: &FixConfig,
+    ) -> Result<ApplyResult, FixConfigError> {
+        config.validate(&self.known_ids())?;
+
+        let mut current = text.to_string();
+        let mut changed_ids = Vec::new();
+        let mut all_cosmetic = true;
+
+        for module in &self.modules {
+            // Tier gate
+            if module.min_tier() > config.strictness_tier {
+                continue;
+            }
+            // Explicit disable list
+            if config.disabled_fixes.contains(module.id()) {
+                continue;
+            }
+            // Explicit enable list (if non-empty, only listed IDs run)
+            if !config.enabled_fixes.is_empty() && !config.enabled_fixes.contains(module.id()) {
+                continue;
+            }
+
+            let new = module.apply(&current, ctx);
+            let new_owned = new.into_owned();
+            if new_owned != current {
+                changed_ids.push(module.id().to_string());
+                if module.classification() != FixClassification::Cosmetic {
+                    all_cosmetic = false;
+                }
+                current = new_owned;
+            }
+        }
+
+        let is_cosmetic_only = !changed_ids.is_empty() && all_cosmetic;
+
+        Ok(ApplyResult {
+            final_text: current,
+            changed_ids,
+            is_cosmetic_only,
+        })
+    }
 }
 
 impl Default for FixRegistry {
@@ -108,6 +171,12 @@ impl FixModule for WhitespaceCleanup {
     }
     fn description(&self) -> &str {
         "Normalizes line endings, removes trailing whitespace, collapses excessive blank lines"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Cosmetic
+    }
+    fn min_tier(&self) -> u8 {
+        0
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         if text.is_empty() {
@@ -177,11 +246,7 @@ impl FixModule for WhitespaceCleanup {
         if line_start < len {
             let line = &text[line_start..len];
             let trimmed = line.trim_end();
-            if trimmed != line {
-                changed = true;
-            }
             if !trimmed.is_empty() {
-                consecutive_blanks = 0;
                 result.push_str(trimmed);
             }
             // Input didn't end with newline; we need to add one
@@ -219,6 +284,12 @@ impl FixModule for HeadingSpacing {
     }
     fn description(&self) -> &str {
         "Ensures blank line before headings"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Cosmetic
+    }
+    fn min_tier(&self) -> u8 {
+        0
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         // A blank line before a heading means pattern: ...\n\n==...
@@ -280,6 +351,12 @@ impl FixModule for HtmlToWikitext {
     fn description(&self) -> &str {
         "Converts HTML tags to wikitext equivalents"
     }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Maintenance
+    }
+    fn min_tier(&self) -> u8 {
+        1
+    }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         // Early return if no HTML tags present
         if !text.contains('<') {
@@ -326,6 +403,12 @@ impl FixModule for TrailingWhitespace {
     fn description(&self) -> &str {
         "Removes trailing whitespace from lines"
     }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Cosmetic
+    }
+    fn min_tier(&self) -> u8 {
+        0
+    }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         let has_trailing = text.lines().any(|l| l != l.trim_end());
         if !has_trailing {
@@ -358,6 +441,12 @@ impl FixModule for CategorySorting {
     }
     fn description(&self) -> &str {
         "Alphabetically sorts [[Category:...]] entries"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Maintenance
+    }
+    fn min_tier(&self) -> u8 {
+        0
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         const PLACEHOLDER: &str = "\x00AWB_SORT_PLACEHOLDER\x00";
@@ -407,7 +496,7 @@ impl FixModule for CategorySorting {
         sort_entries.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.cmp(&b.1))
-                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.2.cmp(b.2))
         });
 
         let sorted_cats: Vec<&str> = sort_entries.iter().map(|e| e.2).collect();
@@ -448,6 +537,12 @@ impl FixModule for CitationFormatting {
     }
     fn description(&self) -> &str {
         "Fixes common citation template issues: normalizes {{cite web}}/{{cite news}}/{{cite journal}}, renames deprecated parameters"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::StyleSensitive
+    }
+    fn min_tier(&self) -> u8 {
+        2
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static CITE_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -514,6 +609,12 @@ impl FixModule for DuplicateWikilinkRemoval {
     }
     fn description(&self) -> &str {
         "Removes duplicate wikilinks, keeping only first occurrence"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Maintenance
+    }
+    fn min_tier(&self) -> u8 {
+        1
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         use std::collections::HashSet;
@@ -594,6 +695,12 @@ impl FixModule for UnicodeNormalization {
     }
     fn description(&self) -> &str {
         "Fixes common unicode issues: non-breaking spaces, en-dashes in ranges, curly quotes in templates"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::StyleSensitive
+    }
+    fn min_tier(&self) -> u8 {
+        2
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
         static ENDASH_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -682,6 +789,12 @@ impl FixModule for DefaultSortFix {
     }
     fn description(&self) -> &str {
         "Adds {{DEFAULTSORT:}} for titles with diacritics if missing"
+    }
+    fn classification(&self) -> FixClassification {
+        FixClassification::Maintenance
+    }
+    fn min_tier(&self) -> u8 {
+        1
     }
     fn apply<'a>(&self, text: &'a str, ctx: &FixContext) -> Cow<'a, str> {
         static DEFAULTSORT_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -1302,6 +1415,148 @@ mod tests {
     }
 
     // --- Property-based tests for idempotency ---
+
+    // --- apply_all_with_config Tests ---
+
+    #[test]
+    fn test_tier0_only_runs_tier0_fixes() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 0,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        // Input has HTML that tier-1 HtmlToWikitext would fix, and trailing whitespace (tier 0)
+        let input = "line   \n<b>bold</b>\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        // Tier 0 fixes should run (whitespace cleanup removes trailing spaces)
+        // Tier 1 HtmlToWikitext should NOT run
+        assert!(result.final_text.contains("<b>bold</b>"), "HtmlToWikitext should not run at tier 0");
+        assert!(!result.changed_ids.contains(&"html_to_wikitext".to_string()));
+    }
+
+    #[test]
+    fn test_tier1_includes_tier0_and_tier1() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 1,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "line   \n<b>bold</b>\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        // Both tier 0 and tier 1 should run
+        assert!(result.final_text.contains("'''bold'''"), "HtmlToWikitext should run at tier 1");
+    }
+
+    #[test]
+    fn test_tier2_includes_citations() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 2,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "{{Cite Web|accessdate=2021-01-01}}\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        assert!(result.final_text.contains("access-date="));
+        assert!(result.changed_ids.contains(&"citation_formatting".to_string()));
+    }
+
+    #[test]
+    fn test_unknown_id_in_config_errors() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            enabled_fixes: ["nonexistent_fix".to_string()].into_iter().collect(),
+            ..Default::default()
+        };
+        let result = registry.apply_all_with_config("text\n", &ctx, &config);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_disabled_fixes_skipped() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 2,
+            disabled_fixes: ["citation_formatting".to_string()].into_iter().collect(),
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "{{Cite Web|accessdate=2021-01-01}}\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        // Citation formatting disabled, so accessdate should remain
+        assert!(result.final_text.contains("accessdate="));
+    }
+
+    #[test]
+    fn test_enabled_fixes_whitelist() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 2,
+            enabled_fixes: ["whitespace_cleanup".to_string()].into_iter().collect(),
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "line   \n<b>bold</b>\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        // Only whitespace_cleanup should run
+        assert!(result.final_text.contains("<b>bold</b>"));
+        for id in &result.changed_ids {
+            assert_eq!(id, "whitespace_cleanup");
+        }
+    }
+
+    #[test]
+    fn test_cosmetic_only_detection() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 0,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        // Only cosmetic changes (trailing whitespace)
+        let input = "line   \n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        assert!(result.is_cosmetic_only);
+    }
+
+    #[test]
+    fn test_non_cosmetic_with_maintenance() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 1,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "<b>bold</b>\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        // HtmlToWikitext is Maintenance, not Cosmetic
+        assert!(!result.is_cosmetic_only);
+    }
+
+    #[test]
+    fn test_no_changes_not_cosmetic_only() {
+        let registry = FixRegistry::with_defaults();
+        let ctx = test_context("Test");
+        let config = FixConfig {
+            strictness_tier: 0,
+            allow_cosmetic_only: true,
+            ..Default::default()
+        };
+        let input = "clean text\n";
+        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        assert!(!result.is_cosmetic_only);
+        assert!(result.changed_ids.is_empty());
+    }
 
     mod proptests {
         use super::*;
