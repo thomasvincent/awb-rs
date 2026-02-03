@@ -54,11 +54,6 @@ impl MaskedText {
             return self.masked;
         }
 
-        // Build all sentinel strings once
-        let sentinels: Vec<String> = (0..self.regions.len())
-            .map(|i| format!("{}{}{}", self.sentinel_base, i, SENTINEL_SUFFIX))
-            .collect();
-
         // Single-pass: scan through masked text, find sentinels, assemble result
         let mut result = String::with_capacity(self.masked.len());
         let mut pos = 0;
@@ -68,19 +63,30 @@ impl MaskedText {
         while pos < masked.len() {
             // Check if current position starts with the sentinel base
             if masked[pos..].starts_with(&self.sentinel_base) {
-                // Find which sentinel this is
-                let mut found = false;
-                for (i, sentinel) in sentinels.iter().enumerate() {
-                    if masked[pos..].starts_with(sentinel.as_str()) {
-                        result.push_str(&self.regions[i]);
-                        pos += sentinel.len();
-                        restored_count += 1;
-                        found = true;
-                        break;
+                // Parse the sentinel index directly instead of iterating
+                let after_base = pos + self.sentinel_base.len();
+
+                // Find the end of the numeric index (before SENTINEL_SUFFIX)
+                if let Some(suffix_pos) = masked[after_base..].find(SENTINEL_SUFFIX) {
+                    let index_str = &masked[after_base..after_base + suffix_pos];
+
+                    // Parse the index
+                    if let Ok(idx) = index_str.parse::<usize>() {
+                        if idx < self.regions.len() {
+                            // Valid sentinel — restore it
+                            result.push_str(&self.regions[idx]);
+                            pos = after_base + suffix_pos + SENTINEL_SUFFIX.len();
+                            restored_count += 1;
+                        } else {
+                            // Index out of bounds — fail closed
+                            return self.original;
+                        }
+                    } else {
+                        // Malformed index — fail closed
+                        return self.original;
                     }
-                }
-                if !found {
-                    // Unknown sentinel — fail closed
+                } else {
+                    // No suffix found — fail closed
                     return self.original;
                 }
             } else {

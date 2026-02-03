@@ -32,6 +32,17 @@ pub struct BotConfig {
     /// Allowed namespaces (empty = all allowed)
     #[serde(default)]
     pub allowed_namespaces: std::collections::HashSet<awb_domain::types::Namespace>,
+
+    /// Path to save checkpoint file for crash recovery
+    pub checkpoint_path: Option<PathBuf>,
+
+    /// Delay between edits (default: 10 seconds)
+    #[serde(default = "default_edit_delay")]
+    pub edit_delay: Duration,
+}
+
+fn default_edit_delay() -> Duration {
+    Duration::from_secs(10)
 }
 
 impl Default for BotConfig {
@@ -50,6 +61,8 @@ impl Default for BotConfig {
                 ns.insert(awb_domain::types::Namespace::MAIN);
                 ns
             },
+            checkpoint_path: None,
+            edit_delay: default_edit_delay(),
         }
     }
 }
@@ -123,6 +136,20 @@ impl BotConfig {
         namespaces: std::collections::HashSet<awb_domain::types::Namespace>,
     ) -> Self {
         self.allowed_namespaces = namespaces;
+        self
+    }
+
+    /// Set checkpoint path for crash recovery
+    #[must_use]
+    pub fn with_checkpoint_path(mut self, path: PathBuf) -> Self {
+        self.checkpoint_path = Some(path);
+        self
+    }
+
+    /// Set edit delay between successful edits
+    #[must_use]
+    pub fn with_edit_delay(mut self, delay: Duration) -> Self {
+        self.edit_delay = delay;
         self
     }
 
