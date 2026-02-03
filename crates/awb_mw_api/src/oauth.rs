@@ -170,14 +170,14 @@ impl Serialize for TokenResponse {
             refresh_token: Option<&'a str>,
             expires_in: Option<u64>,
             #[serde(skip)]
-            issued_at: SystemTime,
+            _issued_at: SystemTime,
         }
 
         let helper = TokenResponseHelper {
             access_token: self.access_token.expose_secret(),
-            refresh_token: self.refresh_token.as_ref().map(|s| s.expose_secret().as_ref()),
+            refresh_token: self.refresh_token.as_ref().map(|s| s.expose_secret()),
             expires_in: self.expires_in,
-            issued_at: self.issued_at,
+            _issued_at: self.issued_at,
         };
         helper.serialize(serializer)
     }

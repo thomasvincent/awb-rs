@@ -215,13 +215,11 @@ impl CategoryManager {
 
     /// Normalize category name (remove "Category:" prefix if present)
     fn normalize_category_name(&self, category: &str) -> String {
-        if category.starts_with("Category:") {
-            category[9..].to_string()
-        } else if category.starts_with("category:") {
-            category[9..].to_string()
-        } else {
-            category.to_string()
-        }
+        category
+            .strip_prefix("Category:")
+            .or_else(|| category.strip_prefix("category:"))
+            .unwrap_or(category)
+            .to_string()
     }
 }
 

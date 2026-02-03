@@ -57,8 +57,8 @@ pub enum FfiError {
 
 // Session storage
 struct Session {
-    wiki_url: String,
-    username: String,
+    _wiki_url: String,
+    _username: String,
     password: Option<SecretString>,
     // In a real implementation, this would hold the API client
     // For now, we'll use a simple in-memory structure
@@ -89,8 +89,8 @@ pub fn create_session(
     sessions.insert(
         id,
         Session {
-            wiki_url,
-            username,
+            _wiki_url: wiki_url,
+            _username: username,
             password: Some(SecretString::new(password.into())),
         },
     );

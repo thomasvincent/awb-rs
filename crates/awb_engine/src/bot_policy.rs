@@ -57,11 +57,24 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
 
     // Check {{bots|...}} variants
     static BOTS_RE: OnceLock<regex::Regex> = OnceLock::new();
-    // Note: `[^}]*` stops at the first `}`, not `}}`. This is acceptable because:
-    // 1. Normal params like `deny=BotA,BotB` contain no `}` characters
-    // 2. Nested templates (containing `{{`) are caught by the fail-closed check below
-    // 3. Edge cases like `{{bots|deny=Bot}extra}}` won't match, which is safe (fail-open
-    //    for the regex means the page is processed, but the nested-template check catches it)
+    // REGEX LIMITATION: The pattern `[^}]*` matches any character except `}`, which means
+    // it stops at the FIRST `}` character, not the closing `}}`. This is an inherent
+    // limitation of character class negation in regular expressions.
+    //
+    // Examples of what this matches correctly:
+    // - `{{bots|deny=BotA,BotB}}` → captures `deny=BotA,BotB`
+    // - `{{bots|allow=all}}` → captures `allow=all`
+    //
+    // Examples where the regex stops early (but mitigation handles):
+    // - `{{bots|deny={{PAGENAME}}}}` → captures `deny={{PAGENAME` (stops at first `}`)
+    //   Mitigation: The nested-template check below detects `{{` in captured params
+    //   and fails closed (denies the bot).
+    //
+    // This limitation is acceptable because:
+    // 1. Normal parameter values like `deny=BotA,BotB` contain no `}` characters
+    // 2. Nested templates (containing `{{`) are detected and trigger fail-closed denial
+    // 3. Malformed templates fail open (bot processes page), which is safe since Wikipedia
+    //    editors can fix the template syntax, and we err on the side of processing
     let bots_re = BOTS_RE.get_or_init(|| {
         regex::Regex::new(r"(?i)\{\{\s*bots\s*\|([^}]*)\}\}").expect("known-valid regex")
     });

@@ -145,8 +145,8 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
 
         let mut old_count = 0usize;
         let mut new_count = 0usize;
-        for j in hunk.start..=hunk.end {
-            match tagged[j].tag {
+        for item in tagged.iter().take(hunk.end + 1).skip(hunk.start) {
+            match item.tag {
                 Tag::Context => { old_count += 1; new_count += 1; }
                 Tag::Delete => { old_count += 1; }
                 Tag::Insert => { new_count += 1; }
@@ -158,13 +158,13 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
             old_start, old_count, new_start, new_count
         ));
 
-        for j in hunk.start..=hunk.end {
-            let prefix = match tagged[j].tag {
+        for item in tagged.iter().take(hunk.end + 1).skip(hunk.start) {
+            let prefix = match item.tag {
                 Tag::Context => ' ',
                 Tag::Delete => '-',
                 Tag::Insert => '+',
             };
-            let line_text = tagged[j].text;
+            let line_text = item.text;
             output.push(prefix);
             output.push_str(line_text);
             if !line_text.ends_with('\n') {

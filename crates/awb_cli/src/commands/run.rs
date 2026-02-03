@@ -146,7 +146,7 @@ pub async fn run(
             } else if line.starts_with('-') {
                 pb.println(style(line).red().to_string());
             } else {
-                pb.println(line.to_string());
+                pb.println(line);
             }
         }
         pb.println(style("─".repeat(60)).dim().to_string());

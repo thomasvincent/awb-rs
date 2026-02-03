@@ -19,10 +19,7 @@ const SENTINEL_PREFIX: &str = "\x00\x01AWB_MASK_";
 const SENTINEL_SUFFIX: &str = "\x00\x02";
 
 /// Global nonce counter to ensure each mask() call uses unique sentinels.
-/// Relaxed ordering is sufficient: we only need a unique value per call,
-/// not happens-before relationships across threads. The worst case with
-/// Relaxed is two threads seeing the same value, but fetch_add is atomic
-/// on all platforms so this cannot happen.
+/// SeqCst ordering ensures proper synchronization across threads.
 static MASK_NONCE: AtomicU64 = AtomicU64::new(0);
 
 /// Holds masked regions and the masked text.
@@ -132,7 +129,7 @@ pub fn mask(text: &str) -> MaskedText {
         };
     }
 
-    let nonce = MASK_NONCE.fetch_add(1, Ordering::Relaxed);
+    let nonce = MASK_NONCE.fetch_add(1, Ordering::SeqCst);
     let sentinel_base = format!("{}{}N", SENTINEL_PREFIX, nonce);
     let mut regions: Vec<String> = Vec::new();
     let mut result = String::with_capacity(text.len());

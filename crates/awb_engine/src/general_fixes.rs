@@ -320,8 +320,8 @@ impl FixModule for HeadingSpacing {
                     result_lines.push("");
                     changed = true;
                 }
-                // BOS cosmetic edit removed: if i==1 and prev_line is empty,
-                // the blank line already exists — no need to add another
+                // If prev_line is empty, blank line already exists - no action needed
+                // This prevents cosmetic-only edits at BOS (beginning of string)
             }
 
             result_lines.push(line);
@@ -447,6 +447,9 @@ impl FixModule for CategorySorting {
         0
     }
     fn apply<'a>(&self, text: &'a str, _ctx: &FixContext) -> Cow<'a, str> {
+        // PLACEHOLDER uses \x02 prefix to avoid collision with masking sentinels (\x00 prefix).
+        // This is safe because masking runs at a higher level and category sorting operates
+        // on already-masked text where sentinel regions are replaced with \x00\x01AWB_MASK_* tokens.
         const PLACEHOLDER: &str = "\x02AWB_SORT_PLACEHOLDER\x02";
 
         // Fail closed: if input already contains the placeholder, do not modify
@@ -522,6 +525,33 @@ impl FixModule for CategorySorting {
     }
 }
 
+/// Citation template parameter formatting (normalize names, fix deprecated params).
+///
+/// # Design Note: Masking Interaction
+///
+/// This fix is **intentionally ineffective when masking is enabled**. Citation templates
+/// (e.g., `{{cite web|...}}`) are masked as protected regions during high-level masking
+/// operations, because their parameters require specialized understanding of citation syntax.
+///
+/// When masking runs:
+/// - All `{{cite ...}}` templates are replaced with masking sentinels (`\x00\x01AWB_MASK_*`)
+/// - This fix sees only the masked text, not the original template content
+/// - Parameter renames like `accessdate` → `access-date` are **not applied**
+/// - The fix returns the text unchanged
+///
+/// This is **by design**. Proper citation formatting requires:
+/// 1. Unmasking templates to expose their parameters
+/// 2. Specialized template parsing (not regex)
+/// 3. Parameter-aware rewrites
+/// 4. Re-masking the result
+///
+/// A future dedicated template-aware pass should handle citation reformatting. For now,
+/// this fix only works on unmasked text (or when masking is disabled entirely).
+///
+/// # Tier Classification
+///
+/// Classified as **Tier 2 (StyleSensitive)** to prevent accidental use in unattended
+/// bot mode (Tier 0-1), since the fix is currently ineffective on masked text.
 pub struct CitationFormatting;
 impl FixModule for CitationFormatting {
     fn id(&self) -> &str {
