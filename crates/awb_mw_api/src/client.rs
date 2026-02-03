@@ -7,6 +7,7 @@ use awb_domain::profile::ThrottlePolicy;
 use awb_domain::types::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing;
 
 pub struct EditRequest {
     pub title: Title,
@@ -287,80 +288,91 @@ impl MediaWikiClient for ReqwestMwClient {
     async fn edit_page(&self, edit: &EditRequest) -> Result<EditResponse, MwApiError> {
         self.throttle.acquire_edit_permit().await;
 
-        let csrf = {
-            let token = self.csrf_token.read().await;
-            match token.as_ref() {
-                Some(t) => t.clone(),
-                None => {
-                    drop(token);
-                    self.fetch_csrf_token().await?
+        // Attempt edit with token refresh on badtoken (bounded: at most 1 refresh)
+        let mut token_refreshed = false;
+        loop {
+            // Get or fetch CSRF token
+            let csrf = {
+                let token = self.csrf_token.read().await;
+                match token.as_ref() {
+                    Some(t) => t.clone(),
+                    None => {
+                        drop(token);
+                        self.fetch_csrf_token().await?
+                    }
                 }
-            }
-        };
-
-        let mut params = vec![
-            ("action".to_string(), "edit".to_string()),
-            ("title".to_string(), edit.title.display.clone()),
-            ("text".to_string(), edit.text.clone()),
-            ("summary".to_string(), edit.summary.clone()),
-            ("token".to_string(), csrf),
-            ("basetimestamp".to_string(), edit.base_timestamp.clone()),
-            ("starttimestamp".to_string(), edit.start_timestamp.clone()),
-            ("format".to_string(), "json".to_string()),
-            ("maxlag".to_string(), self.throttle.maxlag().to_string()),
-        ];
-        if edit.minor {
-            params.push(("minor".to_string(), "1".to_string()));
-        }
-        if edit.bot {
-            params.push(("bot".to_string(), "1".to_string()));
-        }
-        if let Some(section) = edit.section {
-            params.push(("section".to_string(), section.to_string()));
-        }
-
-        let resp: serde_json::Value = self
-            .retry_policy
-            .execute(|| async {
-                let builder = self.http.post(self.api_url.as_str()).form(&params);
-                let builder = self
-                    .apply_auth(builder, "POST", self.api_url.as_str(), &params)
-                    .await?;
-                builder.send().await?.json().await.map_err(MwApiError::from)
-            })
-            .await?;
-
-        // Check errors
-        if let Some(error) = resp.get("error") {
-            let code = error["code"].as_str().unwrap_or("unknown").to_string();
-            let info = error["info"].as_str().unwrap_or("").to_string();
-            return match code.as_str() {
-                "editconflict" => Err(MwApiError::EditConflict {
-                    base_rev: awb_domain::types::RevisionId(0),
-                    current_rev: awb_domain::types::RevisionId(0),
-                }),
-                "badtoken" => {
-                    // Clear CSRF token so next retry will fetch a fresh one
-                    *self.csrf_token.write().await = None;
-                    Err(MwApiError::BadToken)
-                }
-                "maxlag" => {
-                    let retry_after = info
-                        .split_whitespace()
-                        .find_map(|w| w.parse::<u64>().ok())
-                        .unwrap_or(5);
-                    Err(MwApiError::MaxLag { retry_after })
-                }
-                _ => Err(MwApiError::ApiError { code, info }),
             };
-        }
 
-        let edit_resp = &resp["edit"];
-        Ok(EditResponse {
-            result: edit_resp["result"].as_str().unwrap_or("").to_string(),
-            new_revid: edit_resp["newrevid"].as_u64(),
-            new_timestamp: edit_resp["newtimestamp"].as_str().map(String::from),
-        })
+            let mut params = vec![
+                ("action".to_string(), "edit".to_string()),
+                ("title".to_string(), edit.title.display.clone()),
+                ("text".to_string(), edit.text.clone()),
+                ("summary".to_string(), edit.summary.clone()),
+                ("token".to_string(), csrf),
+                ("basetimestamp".to_string(), edit.base_timestamp.clone()),
+                ("starttimestamp".to_string(), edit.start_timestamp.clone()),
+                ("format".to_string(), "json".to_string()),
+                ("maxlag".to_string(), self.throttle.maxlag().to_string()),
+            ];
+            if edit.minor {
+                params.push(("minor".to_string(), "1".to_string()));
+            }
+            if edit.bot {
+                params.push(("bot".to_string(), "1".to_string()));
+            }
+            if let Some(section) = edit.section {
+                params.push(("section".to_string(), section.to_string()));
+            }
+
+            let resp: serde_json::Value = self
+                .retry_policy
+                .execute(|| async {
+                    let builder = self.http.post(self.api_url.as_str()).form(&params);
+                    let builder = self
+                        .apply_auth(builder, "POST", self.api_url.as_str(), &params)
+                        .await?;
+                    builder.send().await?.json().await.map_err(MwApiError::from)
+                })
+                .await?;
+
+            // Check errors
+            if let Some(error) = resp.get("error") {
+                let code = error["code"].as_str().unwrap_or("unknown").to_string();
+                let info = error["info"].as_str().unwrap_or("").to_string();
+                return match code.as_str() {
+                    "editconflict" => Err(MwApiError::EditConflict {
+                        base_rev: awb_domain::types::RevisionId(0),
+                        current_rev: awb_domain::types::RevisionId(0),
+                    }),
+                    "badtoken" => {
+                        if !token_refreshed {
+                            // Clear stale token and retry once with a fresh one
+                            *self.csrf_token.write().await = None;
+                            token_refreshed = true;
+                            tracing::warn!("Bad CSRF token, refreshing and retrying edit");
+                            continue; // retry the outer loop
+                        }
+                        // Already refreshed once — fail
+                        Err(MwApiError::BadToken)
+                    }
+                    "maxlag" => {
+                        let retry_after = info
+                            .split_whitespace()
+                            .find_map(|w| w.parse::<u64>().ok())
+                            .unwrap_or(5);
+                        Err(MwApiError::MaxLag { retry_after })
+                    }
+                    _ => Err(MwApiError::ApiError { code, info }),
+                };
+            }
+
+            let edit_resp = &resp["edit"];
+            return Ok(EditResponse {
+                result: edit_resp["result"].as_str().unwrap_or("").to_string(),
+                new_revid: edit_resp["newrevid"].as_u64(),
+                new_timestamp: edit_resp["newtimestamp"].as_str().map(String::from),
+            });
+        }
     }
 
     async fn parse_wikitext(&self, wikitext: &str, title: &Title) -> Result<String, MwApiError> {
@@ -546,5 +558,22 @@ mod tests {
             AuthState::BotPassword => assert!(true),
             _ => assert!(false, "Should be AuthState::BotPassword"),
         }
+    }
+
+    #[test]
+    fn test_csrf_token_cache_structure() {
+        // Verify the CSRF token cache uses Arc<RwLock> for safe concurrent access
+        let api_url = url::Url::parse("https://en.wikipedia.org/w/api.php").unwrap();
+        let policy = ThrottlePolicy {
+            min_edit_interval: Duration::from_millis(100),
+            maxlag: 5,
+            max_retries: 3,
+            backoff_base: Duration::from_millis(100),
+        };
+        let client = ReqwestMwClient::new(api_url, policy).unwrap();
+
+        // Token should start as None
+        let token = client.csrf_token.blocking_read();
+        assert!(token.is_none(), "CSRF token should start as None");
     }
 }

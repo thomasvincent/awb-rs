@@ -275,4 +275,28 @@ mod tests {
         // This test mainly ensures the fuel system is active
         assert!(result.is_err() || result.is_ok());
     }
+
+    #[test]
+    fn test_wasm_no_wasi_imports_available() {
+        // A WASM module that tries to import WASI functions should fail to instantiate
+        // because the linker provides no WASI imports
+        let wat = r#"
+            (module
+                (import "wasi_snapshot_preview1" "fd_write"
+                    (func $fd_write (param i32 i32 i32 i32) (result i32)))
+                (memory (export "memory") 1)
+                (func (export "alloc") (param i32) (result i32) (i32.const 0))
+                (func (export "transform") (param i32 i32) (result i32)
+                    (i32.const 0)
+                )
+            )
+        "#;
+        let wasm_bytes = wat::parse_str(wat).unwrap();
+        let plugin = WasmPlugin::from_bytes("wasi_test", &wasm_bytes, SandboxConfig::default());
+        // Should fail because wasi_snapshot_preview1.fd_write is not provided
+        assert!(plugin.is_err() || {
+            let p = plugin.unwrap();
+            p.transform("test").is_err()
+        });
+    }
 }
