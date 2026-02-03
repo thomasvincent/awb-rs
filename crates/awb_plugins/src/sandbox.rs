@@ -28,6 +28,7 @@ impl Default for SandboxConfig {
             instruction_limit: Some(1_000_000),
             wasm_fuel: 10_000_000,
         }
+        .validated()
     }
 }
 

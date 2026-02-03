@@ -259,6 +259,11 @@ const EXTENSION_TAGS: &[&str] = &[
 
 /// Try to match an extension tag at position `start` (which points to '<').
 /// Returns (tag_name, end_position_exclusive) if matched.
+///
+/// Known limitation: attributes containing a literal `>` (e.g., `<nowiki attr="a>b">`)
+/// may cause the parser to find the closing `>` too early. This is extremely rare in
+/// real wikitext and the fail-closed design means the content would simply not be masked
+/// (i.e., transforms could modify it), which is safe — just suboptimal.
 fn try_match_extension_tag(text: &str, start: usize) -> Option<(&'static str, usize)> {
     let rest = &text[start..];
     // Must start with '<'

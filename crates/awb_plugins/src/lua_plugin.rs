@@ -189,12 +189,11 @@ impl LuaPlugin {
             globals.set(*module, Value::Nil)?;
         }
 
-        // Remove dangerous string functions
+        // Remove dangerous string functions (string.dump can leak bytecode)
+        // string.rep, string.byte, string.char are safe and commonly used by
+        // legitimate plugins — memory limits already prevent abuse via string.rep
         let string_table: mlua::Table = globals.get("string")?;
         string_table.set("dump", Value::Nil)?;
-        string_table.set("rep", Value::Nil)?;
-        string_table.set("byte", Value::Nil)?;
-        string_table.set("char", Value::Nil)?;
 
         debug!("Applied Lua sandbox: removed dangerous modules and functions");
         Ok(())

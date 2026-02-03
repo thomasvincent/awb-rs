@@ -128,7 +128,13 @@ impl WasmPlugin {
         memory
             .read(&store, result_ptr as usize, &mut len_bytes)
             .map_err(|e| PluginError::ExecutionFailed(format!("Memory read failed: {}", e)))?;
-        let result_len = i32::from_le_bytes(len_bytes) as usize;
+        let result_len_i32 = i32::from_le_bytes(len_bytes);
+        if result_len_i32 < 0 {
+            return Err(PluginError::ExecutionFailed(
+                "WASM plugin returned negative result length".into(),
+            ));
+        }
+        let result_len = result_len_i32 as usize;
 
         // Cap result size to 10MB to prevent malicious plugins from consuming excessive memory
         if result_len > 10 * 1024 * 1024 {
