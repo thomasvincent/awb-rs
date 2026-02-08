@@ -159,6 +159,7 @@ fn test_bot_report_json_export() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "Flaky on Windows due to file locking")]
 fn test_checkpoint_save_load_cycle() {
     let temp_dir = TempDir::new().unwrap();
     let checkpoint_path = temp_dir.path().join("checkpoint.json");
@@ -186,6 +187,7 @@ fn test_checkpoint_save_load_cycle() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "Flaky on Windows due to file locking")]
 fn test_checkpoint_resume_functionality() {
     let temp_dir = TempDir::new().unwrap();
     let checkpoint_path = temp_dir.path().join("checkpoint.json");

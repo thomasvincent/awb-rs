@@ -26,12 +26,10 @@ pub enum CredentialError {
 /// this is sufficient.
 fn reject_symlink(path: &std::path::Path) -> Result<(), CredentialError> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Err(CredentialError::Io(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("Refusing to access symlink: {}", path.display()),
-            )))
-        }
+        Ok(meta) if meta.file_type().is_symlink() => Err(CredentialError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Refusing to access symlink: {}", path.display()),
+        ))),
         _ => Ok(()),
     }
 }

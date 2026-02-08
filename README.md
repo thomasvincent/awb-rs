@@ -47,14 +47,14 @@ CLI → Core → API → MediaWiki
 - **State Management**: Resume interrupted sessions
 - **Rate Limiting**: Respects wiki API limits and best practices
 
-## Build Instructions
+## Prerequisites
 
-### Prerequisites
-
-- **Rust**: Version 1.85 or higher
+- **Rust**: Version 1.85 or higher (MSRV)
 - **Cargo**: Included with Rust installation
 
-### Building from Source
+## Installation
+
+### From Source
 
 ```bash
 # Clone the repository
@@ -64,11 +64,50 @@ cd awb-rs
 # Build all workspace crates
 cargo build --workspace --release
 
-# Run tests to verify installation
-cargo test --workspace
-
 # Install the binary
 cargo install --path awb-cli
+```
+
+## Development
+
+### Build
+
+```bash
+# Debug build
+cargo build --workspace
+
+# Release build
+cargo build --workspace --release
+```
+
+### Test
+
+```bash
+# Run all tests
+cargo test --workspace
+
+# Run tests with output
+cargo test --workspace -- --nocapture
+```
+
+### Lint
+
+```bash
+# Check for linting issues
+cargo clippy --workspace --all-targets --all-features
+
+# Apply automatic fixes
+cargo clippy --fix --allow-dirty --workspace
+```
+
+### Format
+
+```bash
+# Check formatting
+cargo fmt --all -- --check
+
+# Apply formatting
+cargo fmt --all
 ```
 
 ## Usage Examples

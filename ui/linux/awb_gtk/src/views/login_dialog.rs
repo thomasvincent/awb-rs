@@ -1,17 +1,19 @@
-use gtk::prelude::*;
-use gtk::glib;
-use libadwaita as adw;
 use adw::prelude::*;
+use gtk::prelude::*;
+use libadwaita as adw;
 
 pub struct LoginDialog {
     dialog: adw::Dialog,
+    #[allow(dead_code)]
     wiki_url_entry: adw::EntryRow,
+    #[allow(dead_code)]
     username_entry: adw::EntryRow,
+    #[allow(dead_code)]
     password_entry: adw::PasswordEntryRow,
 }
 
 impl LoginDialog {
-    pub fn new(parent: &adw::ApplicationWindow) -> Self {
+    pub fn new(_parent: &adw::ApplicationWindow) -> Self {
         // Create preference groups
         let preferences_group = adw::PreferencesGroup::builder()
             .title("Wiki Connection")
@@ -26,15 +28,11 @@ impl LoginDialog {
         preferences_group.add(&wiki_url_entry);
 
         // Username entry
-        let username_entry = adw::EntryRow::builder()
-            .title("Username")
-            .build();
+        let username_entry = adw::EntryRow::builder().title("Username").build();
         preferences_group.add(&username_entry);
 
         // Password entry
-        let password_entry = adw::PasswordEntryRow::builder()
-            .title("Password")
-            .build();
+        let password_entry = adw::PasswordEntryRow::builder().title("Password").build();
         preferences_group.add(&password_entry);
 
         // Create preferences page
@@ -44,16 +42,14 @@ impl LoginDialog {
         // Create the dialog
         let dialog = adw::Dialog::builder()
             .title("Login to Wiki")
-            .content_width(450.0)
-            .content_height(400.0)
+            .content_width(450)
+            .content_height(400)
             .build();
 
         // Create toolbar view for dialog content
         let header_bar = adw::HeaderBar::new();
 
-        let cancel_button = gtk::Button::builder()
-            .label("Cancel")
-            .build();
+        let cancel_button = gtk::Button::builder().label("Cancel").build();
         header_bar.pack_start(&cancel_button);
 
         let login_button = gtk::Button::builder()
@@ -82,9 +78,18 @@ impl LoginDialog {
         let password_weak = password_entry.downgrade();
 
         login_button.connect_clicked(move |_| {
-            let wiki_url = wiki_url_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
-            let username = username_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
-            let password = password_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
+            let wiki_url = wiki_url_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
+            let username = username_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
+            let password = password_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
 
             // Validate inputs
             if wiki_url.is_empty() || username.is_empty() || password.is_empty() {
@@ -113,14 +118,17 @@ impl LoginDialog {
         self.dialog.present(None::<&adw::ApplicationWindow>);
     }
 
+    #[allow(dead_code)]
     pub fn wiki_url(&self) -> String {
         self.wiki_url_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn username(&self) -> String {
         self.username_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn password(&self) -> String {
         self.password_entry.text().to_string()
     }

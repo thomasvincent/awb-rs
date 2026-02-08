@@ -12,12 +12,10 @@ use std::path::PathBuf;
 /// is sufficient.
 fn reject_symlink(path: &std::path::Path) -> Result<(), StorageError> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Err(StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("Refusing to write to symlink: {}", path.display()),
-            )))
-        }
+        Ok(meta) if meta.file_type().is_symlink() => Err(StorageError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Refusing to write to symlink: {}", path.display()),
+        ))),
         _ => Ok(()),
     }
 }
@@ -92,15 +90,21 @@ impl SessionStore for JsonSessionStore {
             tokio::fs::set_permissions(&temp, perms).await?;
         }
         // fsync temp file to ensure data is durable before rename
+        // Note: On Windows, file syncing can be problematic due to exclusive access issues,
+        // but the rename operation itself provides atomicity guarantees.
+        #[cfg(not(windows))]
         {
             let file = tokio::fs::File::open(&temp).await?;
             file.sync_all().await?;
         }
         tokio::fs::rename(&temp, &final_path).await?;
-        // fsync parent directory to ensure the rename is durable
-        if let Some(parent) = final_path.parent() {
-            if let Ok(dir) = tokio::fs::File::open(parent).await {
-                let _ = dir.sync_all().await;
+        // fsync parent directory to ensure the rename is durable (Unix only)
+        #[cfg(unix)]
+        {
+            if let Some(parent) = final_path.parent() {
+                if let Ok(dir) = tokio::fs::File::open(parent).await {
+                    let _ = dir.sync_all().await;
+                }
             }
         }
         Ok(())

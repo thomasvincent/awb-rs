@@ -36,8 +36,5 @@ fn test_cli_version() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.is_empty(),
-        "Version output should not be empty"
-    );
+    assert!(!stdout.is_empty(), "Version output should not be empty");
 }

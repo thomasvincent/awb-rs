@@ -31,8 +31,7 @@ impl RetryPolicy {
             match op().await {
                 Ok(val) => return Ok(val),
                 Err(e) if e.is_retryable() && attempt < self.max_retries => {
-                    let internal_secs =
-                        self.base_delay.as_secs_f64() * 2f64.powi(attempt as i32);
+                    let internal_secs = self.base_delay.as_secs_f64() * 2f64.powi(attempt as i32);
                     let internal_delay = internal_secs.min(self.max_delay.as_secs_f64());
 
                     // Honor server-requested retry_after for MaxLag and RateLimited
@@ -269,7 +268,7 @@ mod tests {
         // so we verify the logic by checking the attempt count with a short retry_after)
         let policy = RetryPolicy {
             max_retries: 1,
-            base_delay: Duration::from_millis(10),  // internal backoff: 10ms
+            base_delay: Duration::from_millis(10), // internal backoff: 10ms
             max_delay: Duration::from_secs(60),
         };
 

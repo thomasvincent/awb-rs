@@ -46,7 +46,11 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
 
     // Step 1: Flatten ops into tagged lines
     #[derive(Clone, Copy)]
-    enum Tag { Context, Delete, Insert }
+    enum Tag {
+        Context,
+        Delete,
+        Insert,
+    }
 
     struct TaggedLine<'a> {
         tag: Tag,
@@ -58,27 +62,42 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
         match op {
             DiffOp::Equal { text, .. } => {
                 for line in text.split_inclusive('\n') {
-                    tagged.push(TaggedLine { tag: Tag::Context, text: line });
+                    tagged.push(TaggedLine {
+                        tag: Tag::Context,
+                        text: line,
+                    });
                 }
             }
             DiffOp::Delete { text, .. } => {
                 for line in text.split_inclusive('\n') {
-                    tagged.push(TaggedLine { tag: Tag::Delete, text: line });
+                    tagged.push(TaggedLine {
+                        tag: Tag::Delete,
+                        text: line,
+                    });
                 }
             }
             DiffOp::Insert { text, .. } => {
                 for line in text.split_inclusive('\n') {
-                    tagged.push(TaggedLine { tag: Tag::Insert, text: line });
+                    tagged.push(TaggedLine {
+                        tag: Tag::Insert,
+                        text: line,
+                    });
                 }
             }
             DiffOp::Replace {
                 old_text, new_text, ..
             } => {
                 for line in old_text.split_inclusive('\n') {
-                    tagged.push(TaggedLine { tag: Tag::Delete, text: line });
+                    tagged.push(TaggedLine {
+                        tag: Tag::Delete,
+                        text: line,
+                    });
                 }
                 for line in new_text.split_inclusive('\n') {
-                    tagged.push(TaggedLine { tag: Tag::Insert, text: line });
+                    tagged.push(TaggedLine {
+                        tag: Tag::Insert,
+                        text: line,
+                    });
                 }
             }
         }
@@ -126,7 +145,10 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
                 continue;
             }
         }
-        hunks.push(Hunk { start: hunk_start, end: hunk_end });
+        hunks.push(Hunk {
+            start: hunk_start,
+            end: hunk_end,
+        });
     }
 
     // Step 4: Emit output
@@ -137,9 +159,16 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
         let mut new_start = 1usize;
         for tl in tagged.iter().take(hunk.start) {
             match tl.tag {
-                Tag::Context => { old_start += 1; new_start += 1; }
-                Tag::Delete => { old_start += 1; }
-                Tag::Insert => { new_start += 1; }
+                Tag::Context => {
+                    old_start += 1;
+                    new_start += 1;
+                }
+                Tag::Delete => {
+                    old_start += 1;
+                }
+                Tag::Insert => {
+                    new_start += 1;
+                }
             }
         }
 
@@ -147,9 +176,16 @@ pub fn to_unified(ops: &[DiffOp], context_lines: usize) -> String {
         let mut new_count = 0usize;
         for item in tagged.iter().take(hunk.end + 1).skip(hunk.start) {
             match item.tag {
-                Tag::Context => { old_count += 1; new_count += 1; }
-                Tag::Delete => { old_count += 1; }
-                Tag::Insert => { new_count += 1; }
+                Tag::Context => {
+                    old_count += 1;
+                    new_count += 1;
+                }
+                Tag::Delete => {
+                    old_count += 1;
+                }
+                Tag::Insert => {
+                    new_count += 1;
+                }
             }
         }
 
@@ -503,7 +539,10 @@ mod tests {
             },
         ];
         let unified = to_unified(&ops, 3);
-        assert!(unified.starts_with("--- a\n+++ b\n"), "Missing unified diff headers");
+        assert!(
+            unified.starts_with("--- a\n+++ b\n"),
+            "Missing unified diff headers"
+        );
     }
 
     #[test]
@@ -545,7 +584,11 @@ mod tests {
         // The hunk should NOT include line1 (too far from the change)
         let lines: Vec<&str> = unified.lines().collect();
         // Should have --- a, +++ b, @@, then context + changes
-        assert!(lines.len() < 12, "context_lines=1 should limit output, got {} lines", lines.len());
+        assert!(
+            lines.len() < 12,
+            "context_lines=1 should limit output, got {} lines",
+            lines.len()
+        );
     }
 
     #[test]

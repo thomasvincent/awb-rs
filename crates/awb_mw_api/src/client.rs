@@ -646,7 +646,10 @@ mod tests {
         // Verify token was cleared
         {
             let token = client.csrf_token.read().await;
-            assert!(token.is_none(), "Token should be cleared after badtoken error");
+            assert!(
+                token.is_none(),
+                "Token should be cleared after badtoken error"
+            );
         }
 
         // In a real scenario, edit_page would then call fetch_csrf_token() to get a fresh token

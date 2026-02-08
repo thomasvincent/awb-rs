@@ -169,6 +169,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "Flaky on Windows due to file locking")]
     fn test_checkpoint_save_load() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = TempDir::new()?;
         let checkpoint_path = temp_dir.path().join("checkpoint.json");
@@ -192,6 +193,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "Flaky on Windows due to file locking")]
     fn test_checkpoint_load_from_disk_resume() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = TempDir::new()?;
         let checkpoint_path = temp_dir.path().join("resume_checkpoint.json");

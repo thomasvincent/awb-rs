@@ -1,9 +1,9 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use awb_domain::rules::{Rule, RuleSet};
 use awb_domain::types::*;
-use awb_engine::general_fixes::{FixRegistry, FixContext};
-use awb_engine::transform::TransformEngine;
 use awb_engine::diff_engine::compute_diff;
+use awb_engine::general_fixes::{FixContext, FixRegistry};
+use awb_engine::transform::TransformEngine;
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::collections::HashSet;
 
 fn create_test_page(wikitext: &str) -> PageContent {
@@ -26,34 +26,50 @@ fn bench_plain_rules(c: &mut Criterion) {
     // Test with 10 rules
     let mut ruleset_10 = RuleSet::new();
     for i in 0..10 {
-        ruleset_10.add(Rule::new_plain(format!("pattern{}", i), format!("replacement{}", i), false));
+        ruleset_10.add(Rule::new_plain(
+            format!("pattern{}", i),
+            format!("replacement{}", i),
+            false,
+        ));
     }
 
     // Test with 50 rules
     let mut ruleset_50 = RuleSet::new();
     for i in 0..50 {
-        ruleset_50.add(Rule::new_plain(format!("pattern{}", i), format!("replacement{}", i), false));
+        ruleset_50.add(Rule::new_plain(
+            format!("pattern{}", i),
+            format!("replacement{}", i),
+            false,
+        ));
     }
 
     let sample_text = "This is a test page with pattern0 and pattern5 and pattern10 repeated multiple times.\n\
                        Pattern0 Pattern5 Pattern10 should all be replaced in this benchmark test.\n\
                        The quick brown fox jumps over the lazy dog. Pattern1 pattern2 pattern3.\n";
 
-    group.bench_with_input(BenchmarkId::new("10_rules", "sample"), &ruleset_10, |b, ruleset| {
-        let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
-        let page = create_test_page(sample_text);
-        b.iter(|| {
-            black_box(engine.apply(&page));
-        });
-    });
+    group.bench_with_input(
+        BenchmarkId::new("10_rules", "sample"),
+        &ruleset_10,
+        |b, ruleset| {
+            let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
+            let page = create_test_page(sample_text);
+            b.iter(|| {
+                black_box(engine.apply(&page));
+            });
+        },
+    );
 
-    group.bench_with_input(BenchmarkId::new("50_rules", "sample"), &ruleset_50, |b, ruleset| {
-        let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
-        let page = create_test_page(sample_text);
-        b.iter(|| {
-            black_box(engine.apply(&page));
-        });
-    });
+    group.bench_with_input(
+        BenchmarkId::new("50_rules", "sample"),
+        &ruleset_50,
+        |b, ruleset| {
+            let engine = TransformEngine::new(ruleset, FixRegistry::new(), HashSet::new()).unwrap();
+            let page = create_test_page(sample_text);
+            b.iter(|| {
+                black_box(engine.apply(&page));
+            });
+        },
+    );
 
     group.finish();
 }
@@ -96,14 +112,22 @@ fn bench_diff_computation(c: &mut Criterion) {
     let old_small = "line 1\nline 2\nline 3\n";
     let new_small = "line 1\nline 2 modified\nline 3\nline 4\n";
 
-    let old_large = (0..100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n") + "\n";
-    let new_large = (0..100).map(|i| {
-        if i % 10 == 0 {
-            format!("line {} modified", i)
-        } else {
-            format!("line {}", i)
-        }
-    }).collect::<Vec<_>>().join("\n") + "\n";
+    let old_large = (0..100)
+        .map(|i| format!("line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let new_large = (0..100)
+        .map(|i| {
+            if i % 10 == 0 {
+                format!("line {} modified", i)
+            } else {
+                format!("line {}", i)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
 
     group.bench_function("small_diff", |b| {
         b.iter(|| {
@@ -125,7 +149,11 @@ fn bench_case_insensitive_rules(c: &mut Criterion) {
 
     let mut ruleset = RuleSet::new();
     for i in 0..20 {
-        ruleset.add(Rule::new_plain(format!("WORD{}", i), format!("replacement{}", i), false));
+        ruleset.add(Rule::new_plain(
+            format!("WORD{}", i),
+            format!("replacement{}", i),
+            false,
+        ));
     }
 
     let sample_text = "This text has WORD0 and word1 and WoRd2 in various cases.\n\
@@ -145,5 +173,11 @@ fn bench_case_insensitive_rules(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_plain_rules, bench_fix_chain, bench_diff_computation, bench_case_insensitive_rules);
+criterion_group!(
+    benches,
+    bench_plain_rules,
+    bench_fix_chain,
+    bench_diff_computation,
+    bench_case_insensitive_rules
+);
 criterion_main!(benches);

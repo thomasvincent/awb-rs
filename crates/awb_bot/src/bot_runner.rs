@@ -257,15 +257,11 @@ impl<C: MediaWikiClient> BotRunner<C> {
         let title = Title::new(parsed.namespace, &parsed.name);
 
         // Fetch page content
-        let page = self
-            .client
-            .get_page(&title)
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                let redacted = self.redact_error_message(&msg);
-                BotError::ApiError(redacted)
-            })?;
+        let page = self.client.get_page(&title).await.map_err(|e| {
+            let msg = e.to_string();
+            let redacted = self.redact_error_message(&msg);
+            BotError::ApiError(redacted)
+        })?;
 
         // Check {{bots}}/{{nobots}} policy before transforming
         let policy_result =
@@ -427,24 +423,35 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         return Ok(PageResult {
                             title: page_title.to_string(),
                             action: PageAction::Edited,
-                            diff_summary: Some(format!("{} rules applied", current_plan.rules_applied.len())),
+                            diff_summary: Some(format!(
+                                "{} rules applied",
+                                current_plan.rules_applied.len()
+                            )),
                             warnings,
                             error: None,
                             timestamp: Utc::now(),
                         });
                     }
-                    Err(MwApiError::EditConflict { base_rev, current_rev }) => {
+                    Err(MwApiError::EditConflict {
+                        base_rev,
+                        current_rev,
+                    }) => {
                         if attempt >= max_retries {
                             // Max retries exceeded - skip this page
                             tracing::Span::current().record("action", "skip");
                             tracing::warn!(
                                 "Edit conflict persisted after {} attempts for {}: base={:?}, current={:?}",
-                                attempt + 1, page_title, base_rev, current_rev
+                                attempt + 1,
+                                page_title,
+                                base_rev,
+                                current_rev
                             );
                             return Ok(PageResult {
                                 title: page_title.to_string(),
                                 action: PageAction::Skipped,
-                                diff_summary: Some("Edit conflict persisted after retry".to_string()),
+                                diff_summary: Some(
+                                    "Edit conflict persisted after retry".to_string(),
+                                ),
                                 warnings,
                                 error: None,
                                 timestamp: Utc::now(),
@@ -454,7 +461,9 @@ impl<C: MediaWikiClient> BotRunner<C> {
                         // Retry
                         tracing::debug!(
                             "Edit conflict for {}: base={:?}, current={:?}",
-                            page_title, base_rev, current_rev
+                            page_title,
+                            base_rev,
+                            current_rev
                         );
                         attempt += 1;
                         continue;
@@ -714,12 +723,7 @@ mod tests {
         let registry = FixRegistry::new();
         let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
 
-        let runner = BotRunner::new(
-            config,
-            client,
-            engine,
-            vec!["Talk:SomePage".to_string()],
-        );
+        let runner = BotRunner::new(config, client, engine, vec!["Talk:SomePage".to_string()]);
         let result = runner.process_page("Talk:SomePage").await.unwrap();
 
         assert_eq!(result.action, PageAction::Skipped);
@@ -818,8 +822,7 @@ mod tests {
         let registry = FixRegistry::new();
         let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
 
-        let runner =
-            BotRunner::new(config, client, engine, vec!["User:Example".to_string()]);
+        let runner = BotRunner::new(config, client, engine, vec!["User:Example".to_string()]);
         let result = runner.process_page("User:Example").await.unwrap();
 
         assert_eq!(result.action, PageAction::Skipped);
@@ -835,7 +838,8 @@ mod tests {
         let registry = FixRegistry::new();
         let engine = TransformEngine::new(&ruleset, registry, HashSet::new()).unwrap();
 
-        let mut runner = BotRunner::new(config, client, engine, vec!["NonexistentPage".to_string()]);
+        let mut runner =
+            BotRunner::new(config, client, engine, vec!["NonexistentPage".to_string()]);
 
         // Add a secret that might appear in API errors
         runner.add_secret("mysecret123456".to_string());
@@ -848,7 +852,10 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
 
         // Verify the error message doesn't contain the secret
-        assert!(!error_msg.contains("mysecret123456"), "Secret should be redacted from error message");
+        assert!(
+            !error_msg.contains("mysecret123456"),
+            "Secret should be redacted from error message"
+        );
     }
 
     #[tokio::test]
@@ -858,7 +865,11 @@ mod tests {
 
         #[async_trait]
         impl MediaWikiClient for SecretLeakingClient {
-            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+            async fn login_bot_password(
+                &self,
+                _username: &str,
+                _password: &str,
+            ) -> Result<(), MwApiError> {
                 Ok(())
             }
 
@@ -890,7 +901,11 @@ mod tests {
                 })
             }
 
-            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+            async fn parse_wikitext(
+                &self,
+                _wikitext: &str,
+                _title: &Title,
+            ) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
         }
@@ -912,8 +927,14 @@ mod tests {
         let error_msg = err.to_string();
 
         // Verify secret is redacted
-        assert!(!error_msg.contains("secret987654321"), "Secret should be redacted from error message");
-        assert!(error_msg.contains("[REDACTED]"), "Redacted placeholder should be present");
+        assert!(
+            !error_msg.contains("secret987654321"),
+            "Secret should be redacted from error message"
+        );
+        assert!(
+            error_msg.contains("[REDACTED]"),
+            "Redacted placeholder should be present"
+        );
     }
 
     #[tokio::test]
@@ -923,7 +944,11 @@ mod tests {
 
         #[async_trait]
         impl MediaWikiClient for SecretLeakingClient {
-            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+            async fn login_bot_password(
+                &self,
+                _username: &str,
+                _password: &str,
+            ) -> Result<(), MwApiError> {
                 Ok(())
             }
 
@@ -954,7 +979,11 @@ mod tests {
                 })
             }
 
-            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+            async fn parse_wikitext(
+                &self,
+                _wikitext: &str,
+                _title: &Title,
+            ) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
         }
@@ -1138,7 +1167,11 @@ mod tests {
 
         #[async_trait]
         impl MediaWikiClient for ConflictThenSuccessClient {
-            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+            async fn login_bot_password(
+                &self,
+                _username: &str,
+                _password: &str,
+            ) -> Result<(), MwApiError> {
                 Ok(())
             }
 
@@ -1196,7 +1229,11 @@ mod tests {
                 }
             }
 
-            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+            async fn parse_wikitext(
+                &self,
+                _wikitext: &str,
+                _title: &Title,
+            ) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
         }
@@ -1226,7 +1263,11 @@ mod tests {
 
         #[async_trait]
         impl MediaWikiClient for AlwaysConflictClient {
-            async fn login_bot_password(&self, _username: &str, _password: &str) -> Result<(), MwApiError> {
+            async fn login_bot_password(
+                &self,
+                _username: &str,
+                _password: &str,
+            ) -> Result<(), MwApiError> {
                 Ok(())
             }
 
@@ -1264,7 +1305,11 @@ mod tests {
                 })
             }
 
-            async fn parse_wikitext(&self, _wikitext: &str, _title: &Title) -> Result<String, MwApiError> {
+            async fn parse_wikitext(
+                &self,
+                _wikitext: &str,
+                _title: &Title,
+            ) -> Result<String, MwApiError> {
                 Ok("<html></html>".to_string())
             }
         }
@@ -1283,6 +1328,11 @@ mod tests {
 
         // Should be skipped after two conflicts
         assert_eq!(result.action, PageAction::Skipped);
-        assert!(result.diff_summary.unwrap().contains("Edit conflict persisted after retry"));
+        assert!(
+            result
+                .diff_summary
+                .unwrap()
+                .contains("Edit conflict persisted after retry")
+        );
     }
 }

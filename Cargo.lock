@@ -355,6 +355,7 @@ dependencies = [
  "sourceview5",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

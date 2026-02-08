@@ -1,8 +1,8 @@
 use gtk::prelude::*;
-use gtk::{gio, glib};
 
 pub struct RuleEditor {
     container: gtk::Box,
+    #[allow(dead_code)]
     list_box: gtk::ListBox,
 }
 
@@ -99,9 +99,7 @@ impl RuleEditor {
             .margin_bottom(5)
             .build();
 
-        let enabled_check = gtk::CheckButton::builder()
-            .active(true)
-            .build();
+        let enabled_check = gtk::CheckButton::builder().active(true).build();
         rule_row.append(&enabled_check);
 
         let pattern_entry = gtk::Entry::builder()
@@ -125,6 +123,7 @@ impl RuleEditor {
         list_box.append(&rule_row);
     }
 
+    #[allow(dead_code)]
     pub fn clear_rules(&self) {
         while let Some(row) = self.list_box.first_child() {
             self.list_box.remove(&row);

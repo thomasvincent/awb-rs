@@ -1,10 +1,10 @@
 #[cfg(target_os = "linux")]
-pub mod main_window;
+pub mod editor_view;
 #[cfg(target_os = "linux")]
 pub mod login_dialog;
 #[cfg(target_os = "linux")]
-pub mod editor_view;
-#[cfg(target_os = "linux")]
-pub mod rule_editor;
+pub mod main_window;
 #[cfg(target_os = "linux")]
 pub mod page_list;
+#[cfg(target_os = "linux")]
+pub mod rule_editor;

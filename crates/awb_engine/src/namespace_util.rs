@@ -282,8 +282,7 @@ mod tests {
 
     #[test]
     fn test_custom_policy() {
-        let policy =
-            NamespacePolicy::with_namespaces([Namespace::MAIN, Namespace::TALK]);
+        let policy = NamespacePolicy::with_namespaces([Namespace::MAIN, Namespace::TALK]);
         assert!(policy.is_allowed(Namespace::MAIN));
         assert!(policy.is_allowed(Namespace::TALK));
         assert!(!policy.is_allowed(Namespace::USER));
