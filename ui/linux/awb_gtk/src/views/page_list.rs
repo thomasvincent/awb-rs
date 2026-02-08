@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::glib;
 
 pub struct PageList {
     container: gtk::Box,
@@ -78,7 +78,7 @@ impl PageList {
 
     fn filter_list(list_box: &gtk::ListBox, query: &str) {
         if query.is_empty() {
-            list_box.set_filter_func(None::<Box<dyn Fn(&gtk::ListBoxRow) -> bool>>);
+            list_box.set_filter_func(gtk::ListBox::NONE);
         } else {
             let query = query.to_string();
             list_box.set_filter_func(Some(Box::new(move |row| {

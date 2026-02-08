@@ -40,8 +40,8 @@ impl LoginDialog {
         // Create the dialog
         let dialog = adw::Dialog::builder()
             .title("Login to Wiki")
-            .content_width(450.0)
-            .content_height(400.0)
+            .content_width(450)
+            .content_height(400)
             .build();
 
         // Create toolbar view for dialog content

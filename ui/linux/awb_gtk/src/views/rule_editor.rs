@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::glib;
 
 pub struct RuleEditor {
     container: gtk::Box,
