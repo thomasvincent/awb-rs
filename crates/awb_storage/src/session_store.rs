@@ -90,21 +90,11 @@ impl SessionStore for JsonSessionStore {
             tokio::fs::set_permissions(&temp, perms).await?;
         }
         // fsync temp file to ensure data is durable before rename
+        // Note: On Windows, file syncing can be problematic due to exclusive access issues,
+        // but the rename operation itself provides atomicity guarantees.
+        #[cfg(not(windows))]
         {
-            #[cfg(windows)]
-            let file = {
-                use std::fs::OpenOptions;
-                use std::os::windows::fs::OpenOptionsExt;
-                // On Windows, we need to explicitly allow sharing to open the file we just wrote
-                let std_file = OpenOptions::new()
-                    .read(true)
-                    .share_mode(0x00000001 | 0x00000002 | 0x00000004) // FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
-                    .open(&temp)?;
-                tokio::fs::File::from_std(std_file)
-            };
-            #[cfg(not(windows))]
             let file = tokio::fs::File::open(&temp).await?;
-
             file.sync_all().await?;
         }
         tokio::fs::rename(&temp, &final_path).await?;
