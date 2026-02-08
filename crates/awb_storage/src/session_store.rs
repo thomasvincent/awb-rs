@@ -93,8 +93,8 @@ impl SessionStore for JsonSessionStore {
         {
             #[cfg(windows)]
             let file = {
-                use std::os::windows::fs::OpenOptionsExt;
                 use std::fs::OpenOptions;
+                use std::os::windows::fs::OpenOptionsExt;
                 // On Windows, we need to explicitly allow sharing to open the file we just wrote
                 let std_file = OpenOptions::new()
                     .read(true)
