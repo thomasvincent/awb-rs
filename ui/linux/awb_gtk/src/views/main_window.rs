@@ -13,7 +13,9 @@ pub struct MainWindow {
     _page_list: PageList,
     _editor: EditorView,
     _rule_editor: RuleEditor,
+    #[allow(dead_code)]
     status_label: gtk::Label,
+    #[allow(dead_code)]
     progress_bar: gtk::ProgressBar,
 }
 
@@ -195,10 +197,12 @@ impl MainWindow {
         self.window.present();
     }
 
+    #[allow(dead_code)]
     pub fn set_status(&self, message: &str) {
         self.status_label.set_label(message);
     }
 
+    #[allow(dead_code)]
     pub fn set_progress(&self, fraction: f64) {
         self.progress_bar.set_fraction(fraction);
     }

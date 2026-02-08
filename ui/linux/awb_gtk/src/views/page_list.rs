@@ -2,6 +2,7 @@ use gtk::prelude::*;
 
 pub struct PageList {
     container: gtk::Box,
+    #[allow(dead_code)]
     list_box: gtk::ListBox,
     #[allow(dead_code)]
     search_entry: gtk::SearchEntry,
@@ -57,6 +58,7 @@ impl PageList {
         &self.container
     }
 
+    #[allow(dead_code)]
     pub fn add_page(&self, title: &str) {
         let row = gtk::Label::builder()
             .label(title)
@@ -70,6 +72,7 @@ impl PageList {
         self.list_box.append(&row);
     }
 
+    #[allow(dead_code)]
     pub fn clear_pages(&self) {
         while let Some(child) = self.list_box.first_child() {
             self.list_box.remove(&child);
