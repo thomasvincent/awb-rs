@@ -16,6 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-4-dev libadwaita-1-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install glib gtk4 libadwaita
+
       - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
 
       - uses: Swatinem/rust-cache@ad397744b0d591a723ab90405b7247fac0e6b8db # v2
