@@ -78,10 +78,10 @@ impl PageList {
 
     fn filter_list(list_box: &gtk::ListBox, query: &str) {
         if query.is_empty() {
-            list_box.set_filter_func(None::<fn(&gtk::ListBoxRow) -> bool>);
+            list_box.unset_filter_func();
         } else {
             let query = query.to_string();
-            list_box.set_filter_func(Some(Box::new(move |row: &gtk::ListBoxRow| {
+            list_box.set_filter_func(move |row: &gtk::ListBoxRow| {
                 if let Some(child) = row.child() {
                     if let Ok(label) = child.downcast::<gtk::Label>() {
                         let text = label.text().to_lowercase();
@@ -89,7 +89,7 @@ impl PageList {
                     }
                 }
                 false
-            }) as Box<dyn Fn(&gtk::ListBoxRow) -> bool>));
+            });
         }
     }
 }
