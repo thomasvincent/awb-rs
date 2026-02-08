@@ -5,6 +5,7 @@ pub struct EditorView {
     container: gtk::Box,
     source_view: gtk::TextView,
     diff_view: gtk::TextView,
+    #[allow(dead_code)]
     notebook: gtk::Notebook,
 }
 
@@ -106,13 +107,13 @@ impl EditorView {
     }
 
     pub fn set_text(&self, text: &str) {
-        if let Some(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>().ok() {
+        if let Ok(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>() {
             buffer.set_text(text);
         }
     }
 
     pub fn get_text(&self) -> String {
-        if let Some(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>().ok() {
+        if let Ok(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>() {
             let start = buffer.start_iter();
             let end = buffer.end_iter();
             buffer.text(&start, &end, false).to_string()
@@ -123,7 +124,7 @@ impl EditorView {
 
     pub fn set_diff(&self, before: &str, after: &str) {
         // TODO: Implement proper diff highlighting
-        if let Some(buffer) = self.diff_view.buffer().downcast::<gtk::TextBuffer>().ok() {
+        if let Ok(buffer) = self.diff_view.buffer().downcast::<gtk::TextBuffer>() {
             buffer.set_text(&format!(
                 "=== BEFORE ===\n{}\n\n=== AFTER ===\n{}",
                 before, after
