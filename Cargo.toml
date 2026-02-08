@@ -24,6 +24,8 @@ authors = ["Thomas Vincent"]
 homepage = "https://github.com/thomasvincent/awb-rs"
 documentation = "https://docs.rs/awb_domain"
 readme = "README.md"
+description = "A modern, high-performance AutoWikiBrowser (AWB) rewrite in Rust"
+keywords = ["wikipedia", "mediawiki", "bot", "automation", "wiki"]
 
 [workspace.dependencies]
 # Domain
