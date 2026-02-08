@@ -153,21 +153,33 @@ impl MainWindow {
         app.add_action(&login_action);
 
         let quit_action = gio::SimpleAction::new("quit", None);
-        quit_action.connect_activate(glib::clone!(@weak app => move |_, _| {
-            app.quit();
-        }));
+        quit_action.connect_activate(glib::clone!(
+            #[weak]
+            app,
+            move |_, _| {
+                app.quit();
+            }
+        ));
         app.add_action(&quit_action);
 
         let about_action = gio::SimpleAction::new("about", None);
-        about_action.connect_activate(glib::clone!(@weak window => move |_, _| {
-            Self::show_about_dialog(&window);
-        }));
+        about_action.connect_activate(glib::clone!(
+            #[weak]
+            window,
+            move |_, _| {
+                Self::show_about_dialog(&window);
+            }
+        ));
         app.add_action(&about_action);
 
         // Connect login button
-        login_button.connect_clicked(glib::clone!(@weak window => move |_| {
-            Self::show_login_dialog(&window);
-        }));
+        login_button.connect_clicked(glib::clone!(
+            #[weak]
+            window,
+            move |_| {
+                Self::show_login_dialog(&window);
+            }
+        ));
 
         Self {
             window,

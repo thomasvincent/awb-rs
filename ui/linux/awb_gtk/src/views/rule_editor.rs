@@ -1,4 +1,3 @@
-use gtk::glib;
 use gtk::prelude::*;
 
 pub struct RuleEditor {

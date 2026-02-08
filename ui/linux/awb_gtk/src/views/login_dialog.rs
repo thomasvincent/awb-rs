@@ -1,5 +1,3 @@
-use adw::prelude::*;
-use gtk::glib;
 use gtk::prelude::*;
 use libadwaita as adw;
 
@@ -11,7 +9,7 @@ pub struct LoginDialog {
 }
 
 impl LoginDialog {
-    pub fn new(parent: &adw::ApplicationWindow) -> Self {
+    pub fn new(_parent: &adw::ApplicationWindow) -> Self {
         // Create preference groups
         let preferences_group = adw::PreferencesGroup::builder()
             .title("Wiki Connection")
