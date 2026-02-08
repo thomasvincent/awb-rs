@@ -4,9 +4,9 @@ mod app;
 mod views;
 
 #[cfg(target_os = "linux")]
-use gtk::prelude::*;
-#[cfg(target_os = "linux")]
 use gtk::glib;
+#[cfg(target_os = "linux")]
+use gtk::prelude::*;
 
 #[cfg(target_os = "linux")]
 fn main() -> glib::ExitCode {

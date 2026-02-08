@@ -1,7 +1,7 @@
-use gtk::prelude::*;
-use gtk::glib;
-use libadwaita as adw;
 use adw::prelude::*;
+use gtk::glib;
+use gtk::prelude::*;
+use libadwaita as adw;
 
 pub struct LoginDialog {
     dialog: adw::Dialog,
@@ -26,15 +26,11 @@ impl LoginDialog {
         preferences_group.add(&wiki_url_entry);
 
         // Username entry
-        let username_entry = adw::EntryRow::builder()
-            .title("Username")
-            .build();
+        let username_entry = adw::EntryRow::builder().title("Username").build();
         preferences_group.add(&username_entry);
 
         // Password entry
-        let password_entry = adw::PasswordEntryRow::builder()
-            .title("Password")
-            .build();
+        let password_entry = adw::PasswordEntryRow::builder().title("Password").build();
         preferences_group.add(&password_entry);
 
         // Create preferences page
@@ -51,9 +47,7 @@ impl LoginDialog {
         // Create toolbar view for dialog content
         let header_bar = adw::HeaderBar::new();
 
-        let cancel_button = gtk::Button::builder()
-            .label("Cancel")
-            .build();
+        let cancel_button = gtk::Button::builder().label("Cancel").build();
         header_bar.pack_start(&cancel_button);
 
         let login_button = gtk::Button::builder()
@@ -82,9 +76,18 @@ impl LoginDialog {
         let password_weak = password_entry.downgrade();
 
         login_button.connect_clicked(move |_| {
-            let wiki_url = wiki_url_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
-            let username = username_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
-            let password = password_weak.upgrade().map(|e| e.text().to_string()).unwrap_or_default();
+            let wiki_url = wiki_url_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
+            let username = username_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
+            let password = password_weak
+                .upgrade()
+                .map(|e| e.text().to_string())
+                .unwrap_or_default();
 
             // Validate inputs
             if wiki_url.is_empty() || username.is_empty() || password.is_empty() {

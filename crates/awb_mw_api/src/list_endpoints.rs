@@ -115,7 +115,8 @@ pub async fn fetch_watchlist(
         ("wrlimit", &limit_str),
     ];
 
-    let mut titles = fetch_all_pages(client, api_url, &base_params, "watchlistraw", "wrcontinue").await?;
+    let mut titles =
+        fetch_all_pages(client, api_url, &base_params, "watchlistraw", "wrcontinue").await?;
 
     if limit > 0 && titles.len() > limit as usize {
         titles.truncate(limit as usize);
@@ -164,7 +165,8 @@ pub async fn fetch_user_contributions(
         ("uclimit", &limit_str),
     ];
 
-    let mut titles = fetch_all_pages(client, api_url, &base_params, "usercontribs", "uccontinue").await?;
+    let mut titles =
+        fetch_all_pages(client, api_url, &base_params, "usercontribs", "uccontinue").await?;
 
     if limit > 0 && titles.len() > limit as usize {
         titles.truncate(limit as usize);

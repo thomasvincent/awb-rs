@@ -390,7 +390,9 @@ pub async fn oauth2_exchange_code(
 
     Ok(TokenResponse {
         access_token: SecretString::new(token_result.access_token().secret().clone().into()),
-        refresh_token: token_result.refresh_token().map(|t| SecretString::new(t.secret().clone().into())),
+        refresh_token: token_result
+            .refresh_token()
+            .map(|t| SecretString::new(t.secret().clone().into())),
         expires_in: token_result.expires_in().map(|d| d.as_secs()),
         issued_at: SystemTime::now(),
     })
@@ -413,7 +415,9 @@ pub async fn oauth2_refresh_token(
 
     Ok(TokenResponse {
         access_token: SecretString::new(token_result.access_token().secret().clone().into()),
-        refresh_token: token_result.refresh_token().map(|t| SecretString::new(t.secret().clone().into())),
+        refresh_token: token_result
+            .refresh_token()
+            .map(|t| SecretString::new(t.secret().clone().into())),
         expires_in: token_result.expires_in().map(|d| d.as_secs()),
         issued_at: SystemTime::now(),
     })
@@ -433,7 +437,9 @@ fn build_oauth2_client(config: &OAuth2Config) -> Result<BasicClient, MwApiError>
 
     Ok(BasicClient::new(
         ClientId::new(config.client_id.clone()),
-        Some(ClientSecret::new(config.client_secret.expose_secret().to_string())),
+        Some(ClientSecret::new(
+            config.client_secret.expose_secret().to_string(),
+        )),
         auth_url,
         Some(token_url),
     )
@@ -460,7 +466,8 @@ impl OAuthSession {
     pub async fn get_access_token(&mut self) -> Result<String, MwApiError> {
         if self.token.is_expired() {
             if let Some(ref refresh_token) = self.token.refresh_token {
-                self.token = oauth2_refresh_token(&self.config, refresh_token.expose_secret()).await?;
+                self.token =
+                    oauth2_refresh_token(&self.config, refresh_token.expose_secret()).await?;
             } else {
                 return Err(MwApiError::AuthError {
                     reason: "Token expired and no refresh token available".into(),

@@ -177,7 +177,8 @@ pub fn mask(text: &str) -> MaskedText {
         }
 
         // 4. File/Image links: [[File:...]] or [[Image:...]]
-        if i + 2 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' && is_file_or_image_link(text, i) {
+        if i + 2 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' && is_file_or_image_link(text, i)
+        {
             if let Some(end) = find_matching_brackets(bytes, i) {
                 let region = &text[i..end];
                 let idx = regions.len();
@@ -245,14 +246,7 @@ fn find_bytes(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
 }
 
 /// Extension tags we protect (case-insensitive).
-const EXTENSION_TAGS: &[&str] = &[
-    "nowiki",
-    "pre",
-    "code",
-    "syntaxhighlight",
-    "math",
-    "source",
-];
+const EXTENSION_TAGS: &[&str] = &["nowiki", "pre", "code", "syntaxhighlight", "math", "source"];
 
 /// Try to match an extension tag at position `start` (which points to '<').
 /// Returns (tag_name, end_position_exclusive) if matched.
@@ -271,9 +265,7 @@ fn try_match_extension_tag(text: &str, start: usize) -> Option<(&'static str, us
 
     for &tag in EXTENSION_TAGS {
         // Check opening tag (case-insensitive)
-        if after_lt.len() >= tag.len()
-            && after_lt[..tag.len()].eq_ignore_ascii_case(tag)
-        {
+        if after_lt.len() >= tag.len() && after_lt[..tag.len()].eq_ignore_ascii_case(tag) {
             // After tag name must be '>' or whitespace (for attributes) or '/>'
             let after_name = &after_lt[tag.len()..];
             if after_name.starts_with('>')

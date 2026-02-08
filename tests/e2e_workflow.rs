@@ -116,28 +116,63 @@ fn test_full_edit_workflow_without_network() {
 
     // Step 7: Check warnings are appropriate
     // Should not have "no change" warning since we made changes
-    assert!(!plan.warnings.iter().any(|w| matches!(w, awb_domain::warnings::Warning::NoChange)));
+    assert!(
+        !plan
+            .warnings
+            .iter()
+            .any(|w| matches!(w, awb_domain::warnings::Warning::NoChange))
+    );
 
     // Verify specific transformations
-    assert!(!plan.new_wikitext.contains("teh "), "Typo 'teh' should be fixed");
-    assert!(plan.new_wikitext.contains("the "), "Should contain correct 'the'");
+    assert!(
+        !plan.new_wikitext.contains("teh "),
+        "Typo 'teh' should be fixed"
+    );
+    assert!(
+        plan.new_wikitext.contains("the "),
+        "Should contain correct 'the'"
+    );
 
     // HTML to wikitext conversion
-    assert!(plan.new_wikitext.contains("'''Notable works:'''"), "HTML <b> should convert to wikitext");
+    assert!(
+        plan.new_wikitext.contains("'''Notable works:'''"),
+        "HTML <b> should convert to wikitext"
+    );
 
     // Category sorting
-    let cat_a_pos = plan.new_wikitext.find("[[Category:A Living people]]").unwrap();
-    let cat_m_pos = plan.new_wikitext.find("[[Category:M Male actors]]").unwrap();
-    let cat_z_pos = plan.new_wikitext.find("[[Category:Z American actors]]").unwrap();
-    assert!(cat_a_pos < cat_m_pos, "Categories should be sorted alphabetically");
-    assert!(cat_m_pos < cat_z_pos, "Categories should be sorted alphabetically");
+    let cat_a_pos = plan
+        .new_wikitext
+        .find("[[Category:A Living people]]")
+        .unwrap();
+    let cat_m_pos = plan
+        .new_wikitext
+        .find("[[Category:M Male actors]]")
+        .unwrap();
+    let cat_z_pos = plan
+        .new_wikitext
+        .find("[[Category:Z American actors]]")
+        .unwrap();
+    assert!(
+        cat_a_pos < cat_m_pos,
+        "Categories should be sorted alphabetically"
+    );
+    assert!(
+        cat_m_pos < cat_z_pos,
+        "Categories should be sorted alphabetically"
+    );
 
     // HTML comments are preserved (whitespace_cleanup does not strip comments)
     // Just verify the engine ran without error
 
     // Verify rules were applied
-    assert!(!plan.rules_applied.is_empty(), "Rules should have been applied");
-    assert!(!plan.fixes_applied.is_empty(), "General fixes should have been applied");
+    assert!(
+        !plan.rules_applied.is_empty(),
+        "Rules should have been applied"
+    );
+    assert!(
+        !plan.fixes_applied.is_empty(),
+        "General fixes should have been applied"
+    );
 }
 
 #[test]
@@ -151,7 +186,11 @@ fn test_workflow_with_multiple_rule_types() {
     ruleset.add(Rule::new_plain("AMERICA", "United States", false));
 
     // Regex rule (date formatting)
-    ruleset.add(Rule::new_regex(r"(\d{1,2})/(\d{1,2})/(\d{4})", "$3-$1-$2", false));
+    ruleset.add(Rule::new_regex(
+        r"(\d{1,2})/(\d{1,2})/(\d{4})",
+        "$3-$1-$2",
+        false,
+    ));
 
     // Regex rule (fix double spaces)
     ruleset.add(Rule::new_regex(r"  +", " ", false));
@@ -164,7 +203,8 @@ fn test_workflow_with_multiple_rule_types() {
         title: Title::new(Namespace::MAIN, "Test Article"),
         revision: RevisionId(1),
         timestamp: chrono::Utc::now(),
-        wikitext: "The color of AMERICA  was documented on 12/25/2024.  America and america.".to_string(),
+        wikitext: "The color of AMERICA  was documented on 12/25/2024.  America and america."
+            .to_string(),
         size_bytes: 100,
         is_redirect: false,
         protection: ProtectionInfo::default(),
@@ -174,10 +214,22 @@ fn test_workflow_with_multiple_rule_types() {
     let plan = engine.apply(&page);
 
     // Verify transformations
-    assert!(plan.new_wikitext.contains("colour"), "Plain rule should replace color");
-    assert!(plan.new_wikitext.contains("United States"), "Case-insensitive rule should work");
-    assert!(plan.new_wikitext.contains("2024-12-25"), "Regex rule should format dates");
-    assert!(!plan.new_wikitext.contains("  "), "Double spaces should be removed");
+    assert!(
+        plan.new_wikitext.contains("colour"),
+        "Plain rule should replace color"
+    );
+    assert!(
+        plan.new_wikitext.contains("United States"),
+        "Case-insensitive rule should work"
+    );
+    assert!(
+        plan.new_wikitext.contains("2024-12-25"),
+        "Regex rule should format dates"
+    );
+    assert!(
+        !plan.new_wikitext.contains("  "),
+        "Double spaces should be removed"
+    );
 
     // All rules should have been applied
     assert!(plan.rules_applied.len() >= 3, "Multiple rules should apply");
@@ -223,8 +275,14 @@ Line with trailing spaces
     // Citation templates are inside {{...}} which are masked (protected) regions.
     // The masking engine correctly prevents fixes from modifying template content,
     // so accessdate/deadurl remain unchanged inside the template.
-    assert!(plan.new_wikitext.contains("accessdate"), "Template content should be protected by masking");
-    assert!(plan.new_wikitext.contains("deadurl"), "Template content should be protected by masking");
+    assert!(
+        plan.new_wikitext.contains("accessdate"),
+        "Template content should be protected by masking"
+    );
+    assert!(
+        plan.new_wikitext.contains("deadurl"),
+        "Template content should be protected by masking"
+    );
 
     // General fixes should have been applied
     assert!(!plan.fixes_applied.is_empty());
@@ -308,7 +366,11 @@ fn test_workflow_no_changes_warning() {
     let plan = engine.apply(&page);
 
     // Should have no change warning
-    assert!(plan.warnings.iter().any(|w| matches!(w, awb_domain::warnings::Warning::NoChange)));
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| matches!(w, awb_domain::warnings::Warning::NoChange))
+    );
 
     // Content should be unchanged
     assert_eq!(plan.new_wikitext, content);
@@ -346,7 +408,11 @@ fn test_workflow_large_change_warning() {
     let plan = engine.apply(&page);
 
     // Should have large change warning
-    assert!(plan.warnings.iter().any(|w| matches!(w, awb_domain::warnings::Warning::LargeChange { .. })));
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| matches!(w, awb_domain::warnings::Warning::LargeChange { .. }))
+    );
 
     // Content should be significantly larger
     assert!(plan.new_wikitext.len() > content.len() + 500);

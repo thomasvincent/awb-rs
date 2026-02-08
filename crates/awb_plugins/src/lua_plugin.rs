@@ -20,11 +20,18 @@ fn json_value_to_lua(lua: &Lua, value: &serde_json::Value) -> mlua::Result<mlua:
     json_value_to_lua_impl(lua, value, 0)
 }
 
-fn json_value_to_lua_impl(lua: &Lua, value: &serde_json::Value, depth: usize) -> mlua::Result<mlua::Value> {
+fn json_value_to_lua_impl(
+    lua: &Lua,
+    value: &serde_json::Value,
+    depth: usize,
+) -> mlua::Result<mlua::Value> {
     const MAX_DEPTH: usize = 64;
 
     if depth > MAX_DEPTH {
-        return Err(mlua::Error::RuntimeError(format!("JSON depth limit exceeded (max: {})", MAX_DEPTH)));
+        return Err(mlua::Error::RuntimeError(format!(
+            "JSON depth limit exceeded (max: {})",
+            MAX_DEPTH
+        )));
     }
 
     match value {
@@ -69,20 +76,25 @@ fn lua_value_to_json(value: &mlua::Value) -> Result<serde_json::Value> {
 fn lua_value_to_json_impl(value: &mlua::Value, depth: usize) -> Result<serde_json::Value> {
     const MAX_DEPTH: usize = 64;
     if depth > MAX_DEPTH {
-        return Err(PluginError::ExecutionFailed(format!("Lua table depth limit exceeded (max: {})", MAX_DEPTH)));
+        return Err(PluginError::ExecutionFailed(format!(
+            "Lua table depth limit exceeded (max: {})",
+            MAX_DEPTH
+        )));
     }
 
     match value {
         mlua::Value::Nil => Ok(serde_json::Value::Null),
         mlua::Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
         mlua::Value::Integer(i) => Ok(serde_json::json!(*i)),
-        mlua::Value::Number(f) => {
-            serde_json::Number::from_f64(*f)
-                .map(serde_json::Value::Number)
-                .ok_or_else(|| PluginError::ExecutionFailed("cannot represent NaN/Inf in JSON".to_string()))
-        }
+        mlua::Value::Number(f) => serde_json::Number::from_f64(*f)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| {
+                PluginError::ExecutionFailed("cannot represent NaN/Inf in JSON".to_string())
+            }),
         mlua::Value::String(s) => {
-            let s = s.to_str().map_err(|e| PluginError::ExecutionFailed(format!("invalid UTF-8: {}", e)))?;
+            let s = s
+                .to_str()
+                .map_err(|e| PluginError::ExecutionFailed(format!("invalid UTF-8: {}", e)))?;
             Ok(serde_json::Value::String(s.to_string()))
         }
         mlua::Value::Table(t) => {
@@ -91,7 +103,9 @@ fn lua_value_to_json_impl(value: &mlua::Value, depth: usize) -> Result<serde_jso
             if len > 0 {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
-                    let v: mlua::Value = t.raw_get(i).map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
+                    let v: mlua::Value = t
+                        .raw_get(i)
+                        .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
                     arr.push(lua_value_to_json_impl(&v, depth + 1)?);
                 }
                 Ok(serde_json::Value::Array(arr))
@@ -104,7 +118,10 @@ fn lua_value_to_json_impl(value: &mlua::Value, depth: usize) -> Result<serde_jso
                 Ok(serde_json::Value::Object(map))
             }
         }
-        _ => Err(PluginError::ExecutionFailed(format!("unsupported Lua type for JSON: {:?}", value))),
+        _ => Err(PluginError::ExecutionFailed(format!(
+            "unsupported Lua type for JSON: {:?}",
+            value
+        ))),
     }
 }
 
@@ -259,19 +276,18 @@ impl LuaPlugin {
         let text_table = lua.create_table()?;
 
         // mw.text.trim(s) — trim whitespace from both ends
-        let trim_fn = lua.create_function(|_, s: String| {
-            Ok(s.trim().to_string())
-        })?;
+        let trim_fn = lua.create_function(|_, s: String| Ok(s.trim().to_string()))?;
         text_table.set("trim", trim_fn)?;
 
         // mw.text.gsub(s, pattern, replacement) — safe string substitution
         // Uses Lua's built-in string.gsub under the hood for safety
-        let gsub_fn = lua.create_function(|lua, (s, pattern, replacement): (String, String, String)| {
-            let string_table: mlua::Table = lua.globals().get("string")?;
-            let gsub: mlua::Function = string_table.get("gsub")?;
-            let result: String = gsub.call((s, pattern, replacement))?;
-            Ok(result)
-        })?;
+        let gsub_fn =
+            lua.create_function(|lua, (s, pattern, replacement): (String, String, String)| {
+                let string_table: mlua::Table = lua.globals().get("string")?;
+                let gsub: mlua::Function = string_table.get("gsub")?;
+                let result: String = gsub.call((s, pattern, replacement))?;
+                Ok(result)
+            })?;
         text_table.set("gsub", gsub_fn)?;
 
         mw_table.set("text", text_table)?;
@@ -362,7 +378,8 @@ impl LuaPlugin {
         if result.len() > MAX_OUTPUT_SIZE {
             return Err(PluginError::ExecutionFailed(format!(
                 "Plugin output exceeds size limit ({} bytes, max: {} bytes)",
-                result.len(), MAX_OUTPUT_SIZE
+                result.len(),
+                MAX_OUTPUT_SIZE
             )));
         }
 
@@ -561,7 +578,8 @@ mod tests {
                 return data.name .. " is " .. tostring(data.age)
             end
         "#;
-        let plugin = LuaPlugin::from_string("json_dec_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("json_dec_test", script, SandboxConfig::default()).unwrap();
         let result = plugin.transform(r#"{"name":"Alice","age":30}"#).unwrap();
         assert_eq!(result, "Alice is 30");
     }
@@ -574,7 +592,8 @@ mod tests {
                 return mw.json.encode(t)
             end
         "#;
-        let plugin = LuaPlugin::from_string("json_enc_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("json_enc_test", script, SandboxConfig::default()).unwrap();
         let result = plugin.transform("ignored").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["name"], "Bob");
@@ -589,7 +608,8 @@ mod tests {
                 return mw.json.encode(data)
             end
         "#;
-        let plugin = LuaPlugin::from_string("json_rt_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("json_rt_test", script, SandboxConfig::default()).unwrap();
         let input = r#"{"items":[1,2,3],"flag":true}"#;
         let result = plugin.transform(input).unwrap();
         let original: serde_json::Value = serde_json::from_str(input).unwrap();
@@ -617,7 +637,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("require_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("require_test", script, SandboxConfig::default()).unwrap();
         assert!(plugin.transform("test").is_err());
     }
 
@@ -641,7 +662,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("loadstring_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("loadstring_test", script, SandboxConfig::default()).unwrap();
         assert!(plugin.transform("test").is_err());
     }
 
@@ -653,7 +675,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("dofile_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("dofile_test", script, SandboxConfig::default()).unwrap();
         assert!(plugin.transform("test").is_err());
     }
 
@@ -665,7 +688,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("debug_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("debug_test", script, SandboxConfig::default()).unwrap();
         assert!(plugin.transform("test").is_err());
     }
 
@@ -677,7 +701,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("package_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("package_test", script, SandboxConfig::default()).unwrap();
         assert!(plugin.transform("test").is_err());
     }
 
@@ -694,7 +719,8 @@ mod tests {
                 return text
             end
         "#;
-        let plugin = LuaPlugin::from_string("stash_test", script, SandboxConfig::default()).unwrap();
+        let plugin =
+            LuaPlugin::from_string("stash_test", script, SandboxConfig::default()).unwrap();
         // Should either fail to load (os is nil at load time) or fail at runtime
         let result = plugin.transform("test");
         // The stash attempt should fail because sandbox is applied BEFORE script loads

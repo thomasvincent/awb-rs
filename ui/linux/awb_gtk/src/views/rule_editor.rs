@@ -99,9 +99,7 @@ impl RuleEditor {
             .margin_bottom(5)
             .build();
 
-        let enabled_check = gtk::CheckButton::builder()
-            .active(true)
-            .build();
+        let enabled_check = gtk::CheckButton::builder().active(true).build();
         rule_row.append(&enabled_check);
 
         let pattern_entry = gtk::Entry::builder()
