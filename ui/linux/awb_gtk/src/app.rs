@@ -1,3 +1,4 @@
+use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use libadwaita as adw;
