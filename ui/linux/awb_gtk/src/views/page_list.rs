@@ -4,6 +4,7 @@ use gtk::glib;
 pub struct PageList {
     container: gtk::Box,
     list_box: gtk::ListBox,
+    #[allow(dead_code)]
     search_entry: gtk::SearchEntry,
 }
 
