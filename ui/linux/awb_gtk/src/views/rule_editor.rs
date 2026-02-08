@@ -2,6 +2,7 @@ use gtk::prelude::*;
 
 pub struct RuleEditor {
     container: gtk::Box,
+    #[allow(dead_code)]
     list_box: gtk::ListBox,
 }
 
@@ -122,6 +123,7 @@ impl RuleEditor {
         list_box.append(&rule_row);
     }
 
+    #[allow(dead_code)]
     pub fn clear_rules(&self) {
         while let Some(row) = self.list_box.first_child() {
             self.list_box.remove(&row);

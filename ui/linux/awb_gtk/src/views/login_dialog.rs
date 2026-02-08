@@ -4,8 +4,11 @@ use libadwaita as adw;
 
 pub struct LoginDialog {
     dialog: adw::Dialog,
+    #[allow(dead_code)]
     wiki_url_entry: adw::EntryRow,
+    #[allow(dead_code)]
     username_entry: adw::EntryRow,
+    #[allow(dead_code)]
     password_entry: adw::PasswordEntryRow,
 }
 
@@ -115,14 +118,17 @@ impl LoginDialog {
         self.dialog.present(None::<&adw::ApplicationWindow>);
     }
 
+    #[allow(dead_code)]
     pub fn wiki_url(&self) -> String {
         self.wiki_url_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn username(&self) -> String {
         self.username_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn password(&self) -> String {
         self.password_entry.text().to_string()
     }

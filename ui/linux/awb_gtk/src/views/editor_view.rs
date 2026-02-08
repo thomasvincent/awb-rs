@@ -2,7 +2,9 @@ use gtk::prelude::*;
 
 pub struct EditorView {
     container: gtk::Box,
+    #[allow(dead_code)]
     source_view: gtk::TextView,
+    #[allow(dead_code)]
     diff_view: gtk::TextView,
     #[allow(dead_code)]
     notebook: gtk::Notebook,
@@ -105,12 +107,14 @@ impl EditorView {
         &self.container
     }
 
+    #[allow(dead_code)]
     pub fn set_text(&self, text: &str) {
         if let Ok(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>() {
             buffer.set_text(text);
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_text(&self) -> String {
         if let Ok(buffer) = self.source_view.buffer().downcast::<gtk::TextBuffer>() {
             let start = buffer.start_iter();
@@ -121,6 +125,7 @@ impl EditorView {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_diff(&self, before: &str, after: &str) {
         // TODO: Implement proper diff highlighting
         if let Ok(buffer) = self.diff_view.buffer().downcast::<gtk::TextBuffer>() {
@@ -131,6 +136,7 @@ impl EditorView {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clear(&self) {
         self.set_text("");
         self.set_diff("", "");
