@@ -68,24 +68,29 @@ impl Serialize for AuthMethod {
         #[derive(Serialize)]
         #[serde(tag = "type")]
         enum AuthMethodHelper<'a> {
-            BotPassword { username: &'a str },
-            OAuth1 { consumer_key: &'a str, access_token: &'a str },
-            OAuth2 { client_id: &'a str },
+            BotPassword {
+                username: &'a str,
+            },
+            OAuth1 {
+                consumer_key: &'a str,
+                access_token: &'a str,
+            },
+            OAuth2 {
+                client_id: &'a str,
+            },
         }
 
         let helper = match self {
             AuthMethod::BotPassword { username } => AuthMethodHelper::BotPassword { username },
-            AuthMethod::OAuth1 { consumer_key, access_token, .. } => {
-                AuthMethodHelper::OAuth1 {
-                    consumer_key,
-                    access_token,
-                }
-            }
-            AuthMethod::OAuth2 { client_id, .. } => {
-                AuthMethodHelper::OAuth2 {
-                    client_id,
-                }
-            }
+            AuthMethod::OAuth1 {
+                consumer_key,
+                access_token,
+                ..
+            } => AuthMethodHelper::OAuth1 {
+                consumer_key,
+                access_token,
+            },
+            AuthMethod::OAuth2 { client_id, .. } => AuthMethodHelper::OAuth2 { client_id },
         };
         helper.serialize(serializer)
     }
@@ -96,7 +101,9 @@ impl<'de> Deserialize<'de> for AuthMethod {
         #[derive(Deserialize)]
         #[serde(tag = "type")]
         enum AuthMethodHelper {
-            BotPassword { username: String },
+            BotPassword {
+                username: String,
+            },
             OAuth1 {
                 consumer_key: String,
                 #[serde(default)]
@@ -115,20 +122,24 @@ impl<'de> Deserialize<'de> for AuthMethod {
         let helper = AuthMethodHelper::deserialize(deserializer)?;
         Ok(match helper {
             AuthMethodHelper::BotPassword { username } => AuthMethod::BotPassword { username },
-            AuthMethodHelper::OAuth1 { consumer_key, consumer_secret, access_token, access_secret } => {
-                AuthMethod::OAuth1 {
-                    consumer_key,
-                    consumer_secret: SecretString::new(consumer_secret.unwrap_or_default().into()),
-                    access_token,
-                    access_secret: SecretString::new(access_secret.unwrap_or_default().into()),
-                }
-            }
-            AuthMethodHelper::OAuth2 { client_id, client_secret } => {
-                AuthMethod::OAuth2 {
-                    client_id,
-                    client_secret: SecretString::new(client_secret.unwrap_or_default().into()),
-                }
-            }
+            AuthMethodHelper::OAuth1 {
+                consumer_key,
+                consumer_secret,
+                access_token,
+                access_secret,
+            } => AuthMethod::OAuth1 {
+                consumer_key,
+                consumer_secret: SecretString::new(consumer_secret.unwrap_or_default().into()),
+                access_token,
+                access_secret: SecretString::new(access_secret.unwrap_or_default().into()),
+            },
+            AuthMethodHelper::OAuth2 {
+                client_id,
+                client_secret,
+            } => AuthMethod::OAuth2 {
+                client_id,
+                client_secret: SecretString::new(client_secret.unwrap_or_default().into()),
+            },
         })
     }
 }
@@ -244,9 +255,15 @@ mod tests {
         // Test serialization — secrets must NOT appear in output
         let json = serde_json::to_string(&auth).unwrap();
         assert!(json.contains("consumer123"));
-        assert!(!json.contains("consumer_secret456"), "consumer_secret must not be serialized");
+        assert!(
+            !json.contains("consumer_secret456"),
+            "consumer_secret must not be serialized"
+        );
         assert!(json.contains("token789"));
-        assert!(!json.contains("token_secret012"), "access_secret must not be serialized");
+        assert!(
+            !json.contains("token_secret012"),
+            "access_secret must not be serialized"
+        );
 
         // Test deserialization with missing secret fields (as written to disk)
         let deserialized: AuthMethod = serde_json::from_str(&json).unwrap();
@@ -258,9 +275,17 @@ mod tests {
                 access_secret,
             } => {
                 assert_eq!(consumer_key, "consumer123");
-                assert_eq!(consumer_secret.expose_secret(), "", "missing secret defaults to empty");
+                assert_eq!(
+                    consumer_secret.expose_secret(),
+                    "",
+                    "missing secret defaults to empty"
+                );
                 assert_eq!(access_token, "token789");
-                assert_eq!(access_secret.expose_secret(), "", "missing secret defaults to empty");
+                assert_eq!(
+                    access_secret.expose_secret(),
+                    "",
+                    "missing secret defaults to empty"
+                );
             }
             _ => panic!("Expected OAuth1 auth method"),
         }

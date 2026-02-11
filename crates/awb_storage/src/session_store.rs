@@ -12,12 +12,10 @@ use std::path::PathBuf;
 /// is sufficient.
 fn reject_symlink(path: &std::path::Path) -> Result<(), StorageError> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Err(StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("Refusing to write to symlink: {}", path.display()),
-            )))
-        }
+        Ok(meta) if meta.file_type().is_symlink() => Err(StorageError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Refusing to write to symlink: {}", path.display()),
+        ))),
         _ => Ok(()),
     }
 }

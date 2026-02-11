@@ -166,12 +166,8 @@ mod tests {
         let client = reqwest::Client::new();
         let api_url = Url::parse(&mock_server.uri()).unwrap();
 
-        let result = fetch_typo_fix_rules(
-            &client,
-            &api_url,
-            "Wikipedia:AutoWikiBrowser/NonExistent",
-        )
-        .await;
+        let result =
+            fetch_typo_fix_rules(&client, &api_url, "Wikipedia:AutoWikiBrowser/NonExistent").await;
 
         assert!(result.is_err());
         match result {

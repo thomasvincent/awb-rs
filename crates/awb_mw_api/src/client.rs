@@ -47,7 +47,11 @@ pub trait MediaWikiClient: Send + Sync {
     async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError>;
     async fn edit_page(&self, edit: &EditRequest) -> Result<EditResponse, MwApiError>;
     async fn parse_wikitext(&self, wikitext: &str, title: &Title) -> Result<String, MwApiError>;
-    async fn list_category_members(&self, category: &str, limit: u32) -> Result<Vec<String>, MwApiError>;
+    async fn list_category_members(
+        &self,
+        category: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, MwApiError>;
     async fn search_pages(&self, query: &str, limit: u32) -> Result<Vec<String>, MwApiError>;
     async fn get_backlinks(&self, title: &str, limit: u32) -> Result<Vec<String>, MwApiError>;
 }
@@ -454,7 +458,11 @@ impl MediaWikiClient for ReqwestMwClient {
             })
     }
 
-    async fn list_category_members(&self, category: &str, limit: u32) -> Result<Vec<String>, MwApiError> {
+    async fn list_category_members(
+        &self,
+        category: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, MwApiError> {
         let mut titles = Vec::new();
         let mut continue_token: Option<String> = None;
         let maxlag = self.throttle.maxlag();
@@ -905,7 +913,10 @@ mod tests {
         // Verify token was cleared
         {
             let token = client.csrf_token.read().await;
-            assert!(token.is_none(), "Token should be cleared after badtoken error");
+            assert!(
+                token.is_none(),
+                "Token should be cleared after badtoken error"
+            );
         }
 
         // In a real scenario, edit_page would then call fetch_csrf_token() to get a fresh token

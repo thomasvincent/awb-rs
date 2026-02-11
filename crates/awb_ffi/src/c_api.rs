@@ -36,10 +36,12 @@ pub unsafe extern "C" fn awb_free_string(ptr: *mut c_char) {
 // Session Management API
 // ============================================================================
 
+use crate::{
+    apply_rules as ffi_apply_rules, compute_diff as ffi_compute_diff, fetch_list as ffi_fetch_list,
+};
 use crate::{create_session as ffi_create_session, destroy_session as ffi_destroy_session};
-use crate::{login as ffi_login, get_page as ffi_get_page, save_page as ffi_save_page};
-use crate::{fetch_list as ffi_fetch_list, apply_rules as ffi_apply_rules, compute_diff as ffi_compute_diff};
-use crate::{SessionHandle, PageInfo, TransformResult};
+use crate::{get_page as ffi_get_page, login as ffi_login, save_page as ffi_save_page};
+use crate::{PageInfo, SessionHandle, TransformResult};
 use std::ffi::CStr;
 
 /// Creates a new session handle.
@@ -133,10 +135,7 @@ pub unsafe extern "C" fn fetch_list(
 /// # Safety
 /// Caller must ensure title is a valid UTF-8 string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_page(
-    handle: SessionHandle,
-    title: *const c_char,
-) -> *mut PageInfo {
+pub unsafe extern "C" fn get_page(handle: SessionHandle, title: *const c_char) -> *mut PageInfo {
     if title.is_null() {
         return std::ptr::null_mut();
     }

@@ -110,9 +110,11 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
                             }
                         } else {
                             // Comma-separated list of bot names
-                            let denied: Vec<&str> =
-                                value.split(',').map(|s| s.trim()).collect();
-                            if denied.iter().any(|name| name.eq_ignore_ascii_case(&bot_lower)) {
+                            let denied: Vec<&str> = value.split(',').map(|s| s.trim()).collect();
+                            if denied
+                                .iter()
+                                .any(|name| name.eq_ignore_ascii_case(&bot_lower))
+                            {
                                 return BotPolicyResult::Denied {
                                     reason: format!("{{{{bots|deny={}}}}}", value),
                                 };
@@ -130,9 +132,11 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
                             };
                         } else {
                             // Only listed bots are allowed
-                            let allowed: Vec<&str> =
-                                value.split(',').map(|s| s.trim()).collect();
-                            if !allowed.iter().any(|name| name.eq_ignore_ascii_case(&bot_lower)) {
+                            let allowed: Vec<&str> = value.split(',').map(|s| s.trim()).collect();
+                            if !allowed
+                                .iter()
+                                .any(|name| name.eq_ignore_ascii_case(&bot_lower))
+                            {
                                 return BotPolicyResult::Denied {
                                     reason: format!(
                                         "{{{{bots|allow={}}}}} — bot not in allow list",
@@ -151,10 +155,7 @@ pub fn check_bot_allowed(wikitext: &str, bot_name: &str) -> BotPolicyResult {
                     _ => {
                         // Unknown parameter — fail closed
                         return BotPolicyResult::Denied {
-                            reason: format!(
-                                "Unknown {{{{bots}}}} parameter: {}={}",
-                                key, value
-                            ),
+                            reason: format!("Unknown {{{{bots}}}} parameter: {}={}", key, value),
                         };
                     }
                 }
@@ -281,7 +282,8 @@ mod tests {
 
     #[test]
     fn test_template_in_middle_of_text() {
-        let text = "Long article text here.\n\n== References ==\n{{bots|deny=MyBot}}\n[[Category:Test]]";
+        let text =
+            "Long article text here.\n\n== References ==\n{{bots|deny=MyBot}}\n[[Category:Test]]";
         let result = check_bot_allowed(text, "MyBot");
         assert!(matches!(result, BotPolicyResult::Denied { .. }));
     }
@@ -289,10 +291,12 @@ mod tests {
     #[test]
     fn test_is_allowed_method() {
         assert!(BotPolicyResult::Allowed.is_allowed());
-        assert!(!BotPolicyResult::Denied {
-            reason: "test".to_string()
-        }
-        .is_allowed());
+        assert!(
+            !BotPolicyResult::Denied {
+                reason: "test".to_string()
+            }
+            .is_allowed()
+        );
     }
 
     #[test]

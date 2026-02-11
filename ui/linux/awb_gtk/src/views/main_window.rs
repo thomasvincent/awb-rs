@@ -1,12 +1,12 @@
+use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use libadwaita as adw;
-use adw::prelude::*;
 
-use super::login_dialog::LoginDialog;
 use super::editor_view::EditorView;
-use super::rule_editor::RuleEditor;
+use super::login_dialog::LoginDialog;
 use super::page_list::PageList;
+use super::rule_editor::RuleEditor;
 
 pub struct MainWindow {
     window: adw::ApplicationWindow,
@@ -126,9 +126,7 @@ impl MainWindow {
         let page_count_label = gtk::Label::new(Some("0 pages"));
         status_bar.append(&page_count_label);
 
-        let progress_bar = gtk::ProgressBar::builder()
-            .width_request(150)
-            .build();
+        let progress_bar = gtk::ProgressBar::builder().width_request(150).build();
         status_bar.append(&progress_bar);
 
         // Assemble the window
