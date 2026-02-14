@@ -1,5 +1,5 @@
-use gtk::prelude::*;
 use gtk::glib;
+use gtk::prelude::*;
 
 pub struct EditorView {
     container: gtk::Box,
@@ -17,10 +17,7 @@ impl EditorView {
             .build();
 
         // Create notebook for tabs
-        let notebook = gtk::Notebook::builder()
-            .vexpand(true)
-            .hexpand(true)
-            .build();
+        let notebook = gtk::Notebook::builder().vexpand(true).hexpand(true).build();
 
         // Source view tab
         let source_view = gtk::TextView::builder()
@@ -127,7 +124,10 @@ impl EditorView {
     pub fn set_diff(&self, before: &str, after: &str) {
         // TODO: Implement proper diff highlighting
         if let Some(buffer) = self.diff_view.buffer().downcast::<gtk::TextBuffer>().ok() {
-            buffer.set_text(&format!("=== BEFORE ===\n{}\n\n=== AFTER ===\n{}", before, after));
+            buffer.set_text(&format!(
+                "=== BEFORE ===\n{}\n\n=== AFTER ===\n{}",
+                before, after
+            ));
         }
     }
 

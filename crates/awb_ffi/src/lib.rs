@@ -17,7 +17,8 @@ use std::sync::Arc;
 use url::Url;
 
 // FFI-safe types
-#[derive(Clone)]
+#[derive(Clone, Copy)]
+#[repr(C)]
 pub struct SessionHandle {
     pub id: u64,
 }
@@ -180,14 +181,32 @@ pub fn fetch_list(
         return Err(FfiError::AuthenticationError);
     }
 
-    // For now, return a mock list since MediaWiki API list fetching
-    // requires category/search/whatlinks queries which aren't implemented in awb_mw_api yet
-    // TODO: Implement actual list fetching when awb_mw_api supports it
-    Ok(vec![
-        format!("Page from {}: {}", source, query),
-        "Example Page 1".to_string(),
-        "Example Page 2".to_string(),
-    ])
+    let client = session
+        .client
+        .as_ref()
+        .ok_or(FfiError::AuthenticationError)?
+        .clone();
+
+    drop(sessions); // Release lock before async operation
+
+    // Default limit for list fetching
+    let limit = 500;
+
+    let titles = TOKIO_RUNTIME
+        .block_on(async {
+            match source.as_str() {
+                "category" => client.list_category_members(&query, limit).await,
+                "search" => client.search_pages(&query, limit).await,
+                "backlinks" => client.get_backlinks(&query, limit).await,
+                _ => Err(awb_mw_api::error::MwApiError::ApiError {
+                    code: "invalid_source".into(),
+                    info: format!("Unknown list source: {}", source),
+                }),
+            }
+        })
+        .map_err(|e| FfiError::NetworkError(format!("Failed to fetch list: {}", e)))?;
+
+    Ok(titles)
 }
 
 pub fn get_page(handle: SessionHandle, title: String) -> Result<PageInfo, FfiError> {

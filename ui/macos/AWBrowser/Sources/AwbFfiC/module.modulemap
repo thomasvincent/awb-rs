@@ -1,0 +1,4 @@
+module AwbFfiC {
+    header "awb_ffiFFI.h"
+    export *
+}

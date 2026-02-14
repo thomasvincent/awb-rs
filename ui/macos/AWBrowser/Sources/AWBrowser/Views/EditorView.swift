@@ -115,7 +115,7 @@ struct EditorView: View {
         .task {
             await loadPage()
         }
-        .onChange(of: pageTitle) { _, _ in
+        .onChange(of: pageTitle) {
             Task {
                 await loadPage()
             }
@@ -181,7 +181,3 @@ struct EditorView: View {
     }
 }
 
-#Preview {
-    EditorView(pageTitle: "Test Page")
-        .environmentObject(SessionViewModel())
-}

@@ -38,7 +38,6 @@ struct LoginView: View {
                     TextField("Wiki username", text: $username)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -102,7 +101,3 @@ struct LoginView: View {
     }
 }
 
-#Preview {
-    LoginView()
-        .environmentObject(SessionViewModel())
-}

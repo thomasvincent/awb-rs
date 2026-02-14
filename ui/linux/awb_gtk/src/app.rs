@@ -1,7 +1,7 @@
-use gtk::prelude::*;
-use gtk::{gio, glib, Application};
-use libadwaita as adw;
 use adw::prelude::*;
+use gtk::prelude::*;
+use gtk::{Application, gio, glib};
+use libadwaita as adw;
 
 use crate::views::main_window::MainWindow;
 

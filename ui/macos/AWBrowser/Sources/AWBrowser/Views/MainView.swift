@@ -117,7 +117,3 @@ struct PageListSidebar: View {
     }
 }
 
-#Preview {
-    MainView()
-        .environmentObject(SessionViewModel())
-}

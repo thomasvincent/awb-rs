@@ -1,98 +1,117 @@
-# AWBrowser - macOS Native UI
+# AWBrowser - macOS Swift UI for AWB-RS
 
-This is the macOS native user interface for AWB-RS (AutoWikiBrowser for Rust).
+A native macOS application for AutoWikiBrowser Rust Edition.
+
+## Quick Start
+
+### Prerequisites
+- macOS 14.0 or later
+- Swift 5.9+
+- Built `libawb_ffi.dylib` library
+
+### Build Rust FFI Library
+```bash
+cd ../../..
+cargo build --package awb_ffi --release
+```
+
+### Build Swift App
+```bash
+swift build
+```
+
+### Run
+```bash
+.build/debug/AWBrowser
+```
+
+## Features
+
+- ✅ MediaWiki login with username/password
+- ✅ Page list loading (Category, Transclusions, Links)
+- ✅ Page editor with original/modified split view
+- ✅ Rule application via FFI
+- ✅ Edit summary customization
+- ✅ Save functionality
+- 🚧 Diff HTML rendering
+- 🚧 Rule editor persistence
+- 🚧 Batch processing
 
 ## Architecture
 
-- **Swift UI**: Modern SwiftUI-based interface
-- **FFI Bridge**: Calls into Rust core via UniFFI
-- **MVVM Pattern**: Clean separation between views and business logic
-
-## Structure
-
 ```
-Sources/AWBrowser/
-├── App.swift                  # App entry point
-├── Views/
-│   ├── LoginView.swift        # Authentication UI
-│   ├── MainView.swift         # Main window with sidebar
-│   ├── EditorView.swift       # Split editor with diff
-│   └── RuleEditorView.swift   # Find/replace rule management
-├── ViewModels/
-│   └── SessionViewModel.swift # State management, FFI calls
-└── Models/
-    └── PageModel.swift        # Data models matching FFI
+AWBrowser/
+├── Sources/
+│   ├── AwbFfiC/           # C module for FFI headers
+│   │   ├── awb_ffiFFI.h
+│   │   └── module.modulemap
+│   └── AWBrowser/
+│       ├── AwbFfi.swift   # UniFFI-generated bindings
+│       ├── App.swift      # Main app entry
+│       ├── Models/
+│       │   └── PageModel.swift
+│       ├── ViewModels/
+│       │   └── SessionViewModel.swift
+│       └── Views/
+│           ├── LoginView.swift
+│           ├── MainView.swift
+│           ├── EditorView.swift
+│           └── RuleEditorView.swift
+└── Package.swift
 ```
 
-## Building
+## FFI Integration
 
-### Prerequisites
+The app uses UniFFI-generated Swift bindings to call Rust code:
 
-1. **Build Rust FFI library**:
-   ```bash
-   cd ../../..  # Return to project root
-   cargo build -p awb_ffi --release
-   ```
+```swift
+// Create session
+let handle = try createSession(
+    wikiUrl: "https://en.wikipedia.org",
+    username: "BotName",
+    password: "password"
+)
 
-2. **Generate UniFFI bindings**:
-   ```bash
-   cargo run --bin uniffi-bindgen generate \
-     crates/awb_ffi/src/awb_ffi.udl \
-     --language swift \
-     --out-dir ui/macos/AWBrowser/Sources/AWBrowser/Generated
-   ```
+// Login
+try login(handle: handle)
 
-3. **Build Swift package**:
-   ```bash
-   swift build
-   ```
+// Get page
+let page = try getPage(handle: handle, title: "Main Page")
+
+// Apply rules
+let result = try applyRules(
+    handle: handle,
+    content: page.wikitext,
+    rulesJson: "{\"enabled_rules\":[]}"
+)
+
+// Save
+try savePage(
+    handle: handle,
+    title: "Main Page",
+    content: result.newWikitext,
+    summary: result.summary
+)
+```
+
+## Development
 
 ### Xcode
-
-To create an Xcode project:
-
 ```bash
-swift package generate-xcodeproj
+open Package.swift
 ```
 
-Then open `AWBrowser.xcodeproj` in Xcode.
+### Dependencies
+Runtime dependency on `libawb_ffi.dylib` in:
+- `../../../target/debug/` (debug builds)
+- `../../../target/release/` (release builds)
 
-## FFI Interface
+### Adding Features
+1. Update Rust FFI in `crates/awb_ffi/`
+2. Regenerate bindings: `cargo build --package awb_ffi`
+3. Copy new bindings to `Sources/AWBrowser/AwbFfi.swift`
+4. Update ViewModels to use new functions
 
-The Swift code calls into Rust via these FFI functions:
+## License
 
-- `create_session(wiki_url, username, password) -> SessionHandle`
-- `login(handle) -> Result<(), FfiError>`
-- `fetch_list(handle, source, query) -> Result<Vec<String>, FfiError>`
-- `get_page(handle, title) -> Result<PageInfo, FfiError>`
-- `apply_rules(handle, content, rules_json) -> Result<TransformResult, FfiError>`
-- `save_page(handle, title, content, summary) -> Result<(), FfiError>`
-- `compute_diff(old, new) -> String`
-
-## Current Status
-
-- ✅ UI structure implemented
-- ✅ FFI layer defined in Rust
-- ✅ Swift models matching FFI types
-- ⚠️ UniFFI bindings not yet generated (requires `uniffi-bindgen` CLI)
-- ⚠️ Placeholder FFI functions in SessionViewModel (will be replaced by generated bindings)
-- 🔲 Actual MediaWiki API integration in Rust
-- 🔲 Persistent session storage
-- 🔲 Rule import/export
-
-## Integration Steps
-
-1. The Rust crate `awb_ffi` exposes a UniFFI interface via `awb_ffi.udl`
-2. UniFFI generates Swift bindings from the UDL file
-3. The generated Swift code is imported into this package
-4. `SessionViewModel` calls the generated FFI functions
-5. The UI remains decoupled from the FFI details
-
-## Testing
-
-Run Swift tests:
-```bash
-swift test
-```
-
-Note: Full integration testing requires the Rust library to be compiled and bindings generated.
+Same as AWB-RS parent project.

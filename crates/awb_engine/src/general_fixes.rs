@@ -313,15 +313,21 @@ impl FixModule for HeadingSpacing {
                 && line.trim_start().chars().take_while(|&c| c == '=').count() >= 2;
 
             if is_heading && i > 0 {
-                let prev_line = lines[i - 1];
+                // Check if there's any actual content before this heading
+                let has_preceding_content = lines[..i].iter().any(|l| !l.trim().is_empty());
 
-                if !prev_line.trim().is_empty() {
-                    // Previous line has content, add blank line before heading
-                    result_lines.push("");
-                    changed = true;
+                if !has_preceding_content {
+                    // Heading is at BOS (only whitespace before it) - don't add blank line
+                    // This prevents cosmetic-only edits at beginning of string
+                } else {
+                    let prev_line = lines[i - 1];
+                    if !prev_line.trim().is_empty() {
+                        // Previous line has content, add blank line before heading
+                        result_lines.push("");
+                        changed = true;
+                    }
+                    // If prev_line is empty, blank line already exists - no action needed
                 }
-                // If prev_line is empty, blank line already exists - no action needed
-                // This prevents cosmetic-only edits at BOS (beginning of string)
             }
 
             result_lines.push(line);
@@ -414,7 +420,8 @@ impl FixModule for TrailingWhitespace {
         } else {
             // Preserve original trailing newline status
             let had_trailing_newline = text.ends_with('\n');
-            let mut result = text.lines()
+            let mut result = text
+                .lines()
                 .map(|l| l.trim_end())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -465,7 +472,8 @@ impl FixModule for CategorySorting {
         });
         // Parse title and optional sort key: [[Category:Title|SortKey]] or [[Category:Title]]
         let cat_parse_re = CAT_PARSE_RE.get_or_init(|| {
-            regex::Regex::new(r"\[\[Category:([^\]|]+)(?:\|([^\]]*))?\]\]").expect("known-valid regex")
+            regex::Regex::new(r"\[\[Category:([^\]|]+)(?:\|([^\]]*))?\]\]")
+                .expect("known-valid regex")
         });
 
         let categories: Vec<String> = cat_re
@@ -486,7 +494,10 @@ impl FixModule for CategorySorting {
                 let (norm_title, norm_sort_key) = if let Some(caps) = cat_parse_re.captures(cat) {
                     let title = caps.get(1).map(|m| m.as_str()).unwrap_or("");
                     let sort_key = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-                    (normalize_category_title(title), normalize_category_title(sort_key))
+                    (
+                        normalize_category_title(title),
+                        normalize_category_title(sort_key),
+                    )
                 } else {
                     (cat.to_lowercase(), String::new())
                 };
@@ -658,9 +669,8 @@ impl FixModule for DuplicateWikilinkRemoval {
         let link_re = LINK_RE.get_or_init(|| {
             regex::Regex::new(r"\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]").expect("known-valid regex")
         });
-        let heading_re = HEADING_RE.get_or_init(|| {
-            regex::Regex::new(r"^={2,6}\s").expect("known-valid regex")
-        });
+        let heading_re =
+            HEADING_RE.get_or_init(|| regex::Regex::new(r"^={2,6}\s").expect("known-valid regex"));
 
         // Record the exact number of trailing newlines
         let trailing_newlines = text.chars().rev().take_while(|&c| c == '\n').count();
@@ -748,8 +758,8 @@ impl FixModule for UnicodeNormalization {
             for (i, &c) in chars.iter().enumerate() {
                 if c == '\u{00A0}' {
                     // Check if next char is punctuation to preserve
-                    let next_is_punct = i + 1 < chars.len()
-                        && matches!(chars[i + 1], ';' | ':' | '!' | '?' | '»');
+                    let next_is_punct =
+                        i + 1 < chars.len() && matches!(chars[i + 1], ';' | ':' | '!' | '?' | '»');
                     if next_is_punct {
                         new_result.push('\u{00A0}');
                     } else {
@@ -1007,7 +1017,10 @@ mod tests {
         let input = "Text\n== H1 ==\nMore\n=== H2 ===\nEven more";
         let result = fix.apply(input, &ctx);
 
-        assert_eq!(result.as_ref(), "Text\n\n== H1 ==\nMore\n\n=== H2 ===\nEven more");
+        assert_eq!(
+            result.as_ref(),
+            "Text\n\n== H1 ==\nMore\n\n=== H2 ===\nEven more"
+        );
     }
 
     // --- CitationFormatting Tests ---
@@ -1404,6 +1417,26 @@ mod tests {
         assert_eq!(result.as_ref(), input);
     }
 
+    #[test]
+    fn test_heading_spacing_bos_no_leading_newline() {
+        let fix = HeadingSpacing;
+        let ctx = test_context("Test");
+        // Heading at absolute BOS - should NOT add a leading newline
+        let input = "== Heading ==";
+        let result = fix.apply(input, &ctx);
+        assert_eq!(result.as_ref(), input, "Should not add newline at BOS");
+    }
+
+    #[test]
+    fn test_heading_spacing_bos_with_preceding_content() {
+        let fix = HeadingSpacing;
+        let ctx = test_context("Test");
+        // Actual content before heading - SHOULD add blank line
+        let input = "Some text\n== Heading ==";
+        let result = fix.apply(input, &ctx);
+        assert_eq!(result.as_ref(), "Some text\n\n== Heading ==");
+    }
+
     // --- CategorySorting additional tests ---
 
     #[test]
@@ -1413,15 +1446,18 @@ mod tests {
         let input = "text\n[[Category:Zebra|Aaa]]\n[[Category:Apple|Zzz]]\n";
         let result = fix.apply(input, &ctx);
         // Should sort by normalized title: Apple < Zebra
-        assert!(result.as_ref().find("[[Category:Apple|Zzz]]").unwrap()
-            < result.as_ref().find("[[Category:Zebra|Aaa]]").unwrap());
+        assert!(
+            result.as_ref().find("[[Category:Apple|Zzz]]").unwrap()
+                < result.as_ref().find("[[Category:Zebra|Aaa]]").unwrap()
+        );
     }
 
     #[test]
     fn test_category_sorting_placeholder_collision() {
         let fix = CategorySorting;
         let ctx = test_context("Test");
-        let input = "text with \x02AWB_SORT_PLACEHOLDER\x02 in it\n[[Category:B]]\n[[Category:A]]\n";
+        let input =
+            "text with \x02AWB_SORT_PLACEHOLDER\x02 in it\n[[Category:B]]\n[[Category:A]]\n";
         let result = fix.apply(input, &ctx);
         // Should return original text unchanged (fail closed)
         assert_eq!(result.as_ref(), input);
@@ -1444,8 +1480,10 @@ mod tests {
         let ctx = test_context("Test");
         let input = "[[Category:Foo_bar]]\n[[Category:Aaa]]\n";
         let result = fix.apply(input, &ctx);
-        assert!(result.as_ref().find("[[Category:Aaa]]").unwrap()
-            < result.as_ref().find("[[Category:Foo_bar]]").unwrap());
+        assert!(
+            result.as_ref().find("[[Category:Aaa]]").unwrap()
+                < result.as_ref().find("[[Category:Foo_bar]]").unwrap()
+        );
     }
 
     // --- Property-based tests for idempotency ---
@@ -1463,10 +1501,15 @@ mod tests {
         };
         // Input has HTML that tier-1 HtmlToWikitext would fix, and trailing whitespace (tier 0)
         let input = "line   \n<b>bold</b>\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         // Tier 0 fixes should run (whitespace cleanup removes trailing spaces)
         // Tier 1 HtmlToWikitext should NOT run
-        assert!(result.final_text.contains("<b>bold</b>"), "HtmlToWikitext should not run at tier 0");
+        assert!(
+            result.final_text.contains("<b>bold</b>"),
+            "HtmlToWikitext should not run at tier 0"
+        );
         assert!(!result.changed_ids.contains(&"html_to_wikitext".to_string()));
     }
 
@@ -1480,9 +1523,14 @@ mod tests {
             ..Default::default()
         };
         let input = "line   \n<b>bold</b>\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         // Both tier 0 and tier 1 should run
-        assert!(result.final_text.contains("'''bold'''"), "HtmlToWikitext should run at tier 1");
+        assert!(
+            result.final_text.contains("'''bold'''"),
+            "HtmlToWikitext should run at tier 1"
+        );
     }
 
     #[test]
@@ -1495,9 +1543,15 @@ mod tests {
             ..Default::default()
         };
         let input = "{{Cite Web|accessdate=2021-01-01}}\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         assert!(result.final_text.contains("access-date="));
-        assert!(result.changed_ids.contains(&"citation_formatting".to_string()));
+        assert!(
+            result
+                .changed_ids
+                .contains(&"citation_formatting".to_string())
+        );
     }
 
     #[test]
@@ -1523,7 +1577,9 @@ mod tests {
             ..Default::default()
         };
         let input = "{{Cite Web|accessdate=2021-01-01}}\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         // Citation formatting disabled, so accessdate should remain
         assert!(result.final_text.contains("accessdate="));
     }
@@ -1539,7 +1595,9 @@ mod tests {
             ..Default::default()
         };
         let input = "line   \n<b>bold</b>\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         // Only whitespace_cleanup should run
         assert!(result.final_text.contains("<b>bold</b>"));
         for id in &result.changed_ids {
@@ -1558,7 +1616,9 @@ mod tests {
         };
         // Only cosmetic changes (trailing whitespace)
         let input = "line   \n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         assert!(result.is_cosmetic_only);
     }
 
@@ -1572,7 +1632,9 @@ mod tests {
             ..Default::default()
         };
         let input = "<b>bold</b>\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         // HtmlToWikitext is Maintenance, not Cosmetic
         assert!(!result.is_cosmetic_only);
     }
@@ -1587,7 +1649,9 @@ mod tests {
             ..Default::default()
         };
         let input = "clean text\n";
-        let result = registry.apply_all_with_config(input, &ctx, &config).unwrap();
+        let result = registry
+            .apply_all_with_config(input, &ctx, &config)
+            .unwrap();
         assert!(!result.is_cosmetic_only);
         assert!(result.changed_ids.is_empty());
     }

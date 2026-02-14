@@ -5,9 +5,15 @@ use awb_security::redact_secrets;
 fn test_credential_store_roundtrip_in_memory() {
     let store = InMemoryCredentialStore::new();
 
-    store.set_password("test_user", "secret_password_123").unwrap();
-    store.set_password("api_key", "sk-1234567890abcdef").unwrap();
-    store.set_password("oauth_client", "oauth_secret_xyz").unwrap();
+    store
+        .set_password("test_user", "secret_password_123")
+        .unwrap();
+    store
+        .set_password("api_key", "sk-1234567890abcdef")
+        .unwrap();
+    store
+        .set_password("oauth_client", "oauth_secret_xyz")
+        .unwrap();
 
     let password = store.get_password("test_user").unwrap();
     assert_eq!(password, "secret_password_123");
@@ -60,7 +66,10 @@ fn test_secret_redaction_basic() {
 #[test]
 fn test_secret_redaction_multiple_secrets() {
     let text = "key1=secret_one_long key2=secret_two_long key3=secret_three_x";
-    let redacted = redact_secrets(text, &["secret_one_long", "secret_two_long", "secret_three_x"]);
+    let redacted = redact_secrets(
+        text,
+        &["secret_one_long", "secret_two_long", "secret_three_x"],
+    );
     assert!(!redacted.contains("secret_one_long"));
     assert!(!redacted.contains("secret_two_long"));
     assert!(!redacted.contains("secret_three_x"));

@@ -315,7 +315,10 @@ mod tests {
 
         // This MUST fail due to fuel exhaustion
         let result = plugin.transform("test");
-        assert!(result.is_err(), "Expected fuel exhaustion error, but transform succeeded");
+        assert!(
+            result.is_err(),
+            "Expected fuel exhaustion error, but transform succeeded"
+        );
     }
 
     #[test]
@@ -336,10 +339,12 @@ mod tests {
         let wasm_bytes = wat::parse_str(wat).unwrap();
         let plugin = WasmPlugin::from_bytes("wasi_test", &wasm_bytes, SandboxConfig::default());
         // Should fail because wasi_snapshot_preview1.fd_write is not provided
-        assert!(plugin.is_err() || {
-            let p = plugin.unwrap();
-            p.transform("test").is_err()
-        });
+        assert!(
+            plugin.is_err() || {
+                let p = plugin.unwrap();
+                p.transform("test").is_err()
+            }
+        );
     }
 
     #[test]
@@ -367,7 +372,10 @@ mod tests {
             Ok(p) => {
                 // Module created, but transform should fail at instantiation
                 let result = p.transform("test");
-                assert!(result.is_err(), "Expected instantiation to fail due to missing import env.system");
+                assert!(
+                    result.is_err(),
+                    "Expected instantiation to fail due to missing import env.system"
+                );
             }
         }
     }

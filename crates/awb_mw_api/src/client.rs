@@ -47,6 +47,13 @@ pub trait MediaWikiClient: Send + Sync {
     async fn get_page(&self, title: &Title) -> Result<PageContent, MwApiError>;
     async fn edit_page(&self, edit: &EditRequest) -> Result<EditResponse, MwApiError>;
     async fn parse_wikitext(&self, wikitext: &str, title: &Title) -> Result<String, MwApiError>;
+    async fn list_category_members(
+        &self,
+        category: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, MwApiError>;
+    async fn search_pages(&self, query: &str, limit: u32) -> Result<Vec<String>, MwApiError>;
+    async fn get_backlinks(&self, title: &str, limit: u32) -> Result<Vec<String>, MwApiError>;
 }
 
 pub struct ReqwestMwClient {
@@ -450,6 +457,266 @@ impl MediaWikiClient for ReqwestMwClient {
                 info: "No parsed HTML returned".into(),
             })
     }
+
+    async fn list_category_members(
+        &self,
+        category: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, MwApiError> {
+        let mut titles = Vec::new();
+        let mut continue_token: Option<String> = None;
+        let maxlag = self.throttle.maxlag();
+
+        // Normalize category name to include "Category:" prefix if not present
+        let category_title = if category.starts_with("Category:") {
+            category.to_string()
+        } else {
+            format!("Category:{}", category)
+        };
+
+        loop {
+            let mut params = vec![
+                ("action".to_string(), "query".to_string()),
+                ("list".to_string(), "categorymembers".to_string()),
+                ("cmtitle".to_string(), category_title.clone()),
+                ("cmlimit".to_string(), "max".to_string()),
+                ("format".to_string(), "json".to_string()),
+                ("maxlag".to_string(), maxlag.to_string()),
+            ];
+
+            if let Some(token) = &continue_token {
+                params.push(("cmcontinue".to_string(), token.clone()));
+            }
+
+            let resp: serde_json::Value = self
+                .retry_policy
+                .execute(|| async {
+                    let builder = self.http.get(self.api_url.as_str()).query(&params);
+                    let builder = self
+                        .apply_auth(builder, "GET", self.api_url.as_str(), &params)
+                        .await?;
+                    let http_resp = builder.send().await?;
+
+                    if http_resp.status() == 429 {
+                        let retry_after = http_resp
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(30);
+                        return Err(MwApiError::RateLimited { retry_after });
+                    }
+
+                    http_resp.json().await.map_err(MwApiError::from)
+                })
+                .await?;
+
+            // Check for API errors
+            if let Some(error) = resp.get("error") {
+                let code = error["code"].as_str().unwrap_or("unknown").to_string();
+                if code == "maxlag" {
+                    let retry_after = error["info"]
+                        .as_str()
+                        .and_then(|s| s.split_whitespace().find_map(|w| w.parse::<u64>().ok()))
+                        .unwrap_or(5);
+                    return Err(MwApiError::MaxLag { retry_after });
+                }
+                let info = error["info"].as_str().unwrap_or("").to_string();
+                return Err(MwApiError::ApiError { code, info });
+            }
+
+            // Extract titles from response
+            if let Some(members) = resp["query"]["categorymembers"].as_array() {
+                for member in members {
+                    if let Some(title) = member["title"].as_str() {
+                        titles.push(title.to_string());
+                        if titles.len() >= limit as usize {
+                            return Ok(titles);
+                        }
+                    }
+                }
+            }
+
+            // Check for continuation token
+            if let Some(cont) = resp.get("continue") {
+                if let Some(token) = cont["cmcontinue"].as_str() {
+                    continue_token = Some(token.to_string());
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(titles)
+    }
+
+    async fn search_pages(&self, query: &str, limit: u32) -> Result<Vec<String>, MwApiError> {
+        let mut titles = Vec::new();
+        let mut continue_token: Option<String> = None;
+        let maxlag = self.throttle.maxlag();
+
+        loop {
+            let mut params = vec![
+                ("action".to_string(), "query".to_string()),
+                ("list".to_string(), "search".to_string()),
+                ("srsearch".to_string(), query.to_string()),
+                ("srlimit".to_string(), "max".to_string()),
+                ("format".to_string(), "json".to_string()),
+                ("maxlag".to_string(), maxlag.to_string()),
+            ];
+
+            if let Some(token) = &continue_token {
+                params.push(("sroffset".to_string(), token.clone()));
+            }
+
+            let resp: serde_json::Value = self
+                .retry_policy
+                .execute(|| async {
+                    let builder = self.http.get(self.api_url.as_str()).query(&params);
+                    let builder = self
+                        .apply_auth(builder, "GET", self.api_url.as_str(), &params)
+                        .await?;
+                    let http_resp = builder.send().await?;
+
+                    if http_resp.status() == 429 {
+                        let retry_after = http_resp
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(30);
+                        return Err(MwApiError::RateLimited { retry_after });
+                    }
+
+                    http_resp.json().await.map_err(MwApiError::from)
+                })
+                .await?;
+
+            // Check for API errors
+            if let Some(error) = resp.get("error") {
+                let code = error["code"].as_str().unwrap_or("unknown").to_string();
+                if code == "maxlag" {
+                    let retry_after = error["info"]
+                        .as_str()
+                        .and_then(|s| s.split_whitespace().find_map(|w| w.parse::<u64>().ok()))
+                        .unwrap_or(5);
+                    return Err(MwApiError::MaxLag { retry_after });
+                }
+                let info = error["info"].as_str().unwrap_or("").to_string();
+                return Err(MwApiError::ApiError { code, info });
+            }
+
+            // Extract titles from response
+            if let Some(results) = resp["query"]["search"].as_array() {
+                for result in results {
+                    if let Some(title) = result["title"].as_str() {
+                        titles.push(title.to_string());
+                        if titles.len() >= limit as usize {
+                            return Ok(titles);
+                        }
+                    }
+                }
+            }
+
+            // Check for continuation token
+            if let Some(cont) = resp.get("continue") {
+                if let Some(token) = cont["sroffset"].as_str() {
+                    continue_token = Some(token.to_string());
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(titles)
+    }
+
+    async fn get_backlinks(&self, title: &str, limit: u32) -> Result<Vec<String>, MwApiError> {
+        let mut titles = Vec::new();
+        let mut continue_token: Option<String> = None;
+        let maxlag = self.throttle.maxlag();
+
+        loop {
+            let mut params = vec![
+                ("action".to_string(), "query".to_string()),
+                ("list".to_string(), "backlinks".to_string()),
+                ("bltitle".to_string(), title.to_string()),
+                ("bllimit".to_string(), "max".to_string()),
+                ("format".to_string(), "json".to_string()),
+                ("maxlag".to_string(), maxlag.to_string()),
+            ];
+
+            if let Some(token) = &continue_token {
+                params.push(("blcontinue".to_string(), token.clone()));
+            }
+
+            let resp: serde_json::Value = self
+                .retry_policy
+                .execute(|| async {
+                    let builder = self.http.get(self.api_url.as_str()).query(&params);
+                    let builder = self
+                        .apply_auth(builder, "GET", self.api_url.as_str(), &params)
+                        .await?;
+                    let http_resp = builder.send().await?;
+
+                    if http_resp.status() == 429 {
+                        let retry_after = http_resp
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(30);
+                        return Err(MwApiError::RateLimited { retry_after });
+                    }
+
+                    http_resp.json().await.map_err(MwApiError::from)
+                })
+                .await?;
+
+            // Check for API errors
+            if let Some(error) = resp.get("error") {
+                let code = error["code"].as_str().unwrap_or("unknown").to_string();
+                if code == "maxlag" {
+                    let retry_after = error["info"]
+                        .as_str()
+                        .and_then(|s| s.split_whitespace().find_map(|w| w.parse::<u64>().ok()))
+                        .unwrap_or(5);
+                    return Err(MwApiError::MaxLag { retry_after });
+                }
+                let info = error["info"].as_str().unwrap_or("").to_string();
+                return Err(MwApiError::ApiError { code, info });
+            }
+
+            // Extract titles from response
+            if let Some(backlinks) = resp["query"]["backlinks"].as_array() {
+                for backlink in backlinks {
+                    if let Some(bl_title) = backlink["title"].as_str() {
+                        titles.push(bl_title.to_string());
+                        if titles.len() >= limit as usize {
+                            return Ok(titles);
+                        }
+                    }
+                }
+            }
+
+            // Check for continuation token
+            if let Some(cont) = resp.get("continue") {
+                if let Some(token) = cont["blcontinue"].as_str() {
+                    continue_token = Some(token.to_string());
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(titles)
+    }
 }
 
 #[cfg(test)]
@@ -646,7 +913,10 @@ mod tests {
         // Verify token was cleared
         {
             let token = client.csrf_token.read().await;
-            assert!(token.is_none(), "Token should be cleared after badtoken error");
+            assert!(
+                token.is_none(),
+                "Token should be cleared after badtoken error"
+            );
         }
 
         // In a real scenario, edit_page would then call fetch_csrf_token() to get a fresh token

@@ -14,16 +14,17 @@ class SessionViewModel: ObservableObject {
 
     func login(wikiUrl: String, username: String, password: String) async throws {
         // Call FFI to create session
-        // Note: This will call the Rust UniFFI-generated Swift bindings
-        // For now, we'll simulate the call structure
-        self.sessionHandle = createSession(
+        // This calls the Rust UniFFI-generated Swift bindings
+        let handle = try AWBrowser.createSession(
             wikiUrl: wikiUrl,
             username: username,
             password: password
         )
 
+        self.sessionHandle = handle
+
         // Attempt login
-        try login(handle: sessionHandle!)
+        try AWBrowser.login(handle: handle)
 
         // Update state
         self.wikiUrl = wikiUrl
@@ -32,6 +33,11 @@ class SessionViewModel: ObservableObject {
     }
 
     func logout() {
+        // Destroy the session on the Rust side
+        if let handle = sessionHandle {
+            try? AWBrowser.destroySession(handle: handle)
+        }
+
         isLoggedIn = false
         sessionHandle = nil
         pageList = []
@@ -45,7 +51,7 @@ class SessionViewModel: ObservableObject {
         guard let handle = sessionHandle else { return }
 
         do {
-            let list = try fetchList(handle: handle, source: source, query: query)
+            let list = try AWBrowser.fetchList(handle: handle, source: source, query: query)
             self.pageList = list
         } catch {
             print("Error fetching list: \(error)")
@@ -57,19 +63,15 @@ class SessionViewModel: ObservableObject {
             throw SessionError.notLoggedIn
         }
 
-        return try getPage(handle: handle, title: title)
+        return try AWBrowser.getPage(handle: handle, title: title)
     }
 
-    func applyRules(content: String) async throws -> TransformResult {
+    func applyRules(content: String, rulesJson: String = "{\"enabled_rules\":[]}") async throws -> TransformResult {
         guard let handle = sessionHandle else {
             throw SessionError.notLoggedIn
         }
 
-        // Serialize current rules to JSON
-        // For now, use empty rules
-        let rulesJson = "{\"enabled_rules\":[]}"
-
-        return try applyRules(handle: handle, content: content, rulesJson: rulesJson)
+        return try AWBrowser.applyRules(handle: handle, content: content, rulesJson: rulesJson)
     }
 
     func savePage(title: String, content: String, summary: String) async throws {
@@ -77,59 +79,13 @@ class SessionViewModel: ObservableObject {
             throw SessionError.notLoggedIn
         }
 
-        try savePage(handle: handle, title: title, content: content, summary: summary)
+        try AWBrowser.savePage(handle: handle, title: title, content: content, summary: summary)
         savedCount += 1
     }
 
     func markPageAsProcessed(_ title: String) {
         processedPages.insert(title)
     }
-}
-
-// Placeholder FFI function signatures
-// These will be replaced by UniFFI-generated bindings
-
-func createSession(wikiUrl: String, username: String, password: String) -> SessionHandle {
-    // Placeholder implementation
-    return SessionHandle(id: 1)
-}
-
-func login(handle: SessionHandle) throws {
-    // Placeholder implementation
-}
-
-func fetchList(handle: SessionHandle, source: String, query: String) throws -> [String] {
-    // Placeholder implementation
-    return ["Page 1", "Page 2", "Page 3"]
-}
-
-func getPage(handle: SessionHandle, title: String) throws -> PageInfo {
-    // Placeholder implementation
-    return PageInfo(
-        pageId: 1,
-        title: title,
-        revision: 100,
-        timestamp: ISO8601DateFormatter().string(from: Date()),
-        wikitext: "Sample wikitext content for \(title)",
-        sizeBytes: 100,
-        isRedirect: false
-    )
-}
-
-func applyRules(handle: SessionHandle, content: String, rulesJson: String) throws -> TransformResult {
-    // Placeholder implementation
-    return TransformResult(
-        newWikitext: content,
-        rulesApplied: [],
-        fixesApplied: [],
-        summary: "AWB-RS automated edit",
-        warnings: [],
-        diffHtml: ""
-    )
-}
-
-func savePage(handle: SessionHandle, title: String, content: String, summary: String) throws {
-    // Placeholder implementation
 }
 
 enum SessionError: Error {

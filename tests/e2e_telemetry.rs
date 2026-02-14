@@ -1,6 +1,6 @@
 use awb_telemetry::events::TelemetryEvent;
 use awb_telemetry::export::{ExportFormat, export_log};
-use awb_telemetry::setup::{TelemetryConfig, init_telemetry};
+use awb_telemetry::setup::TelemetryConfig;
 
 #[test]
 fn test_telemetry_event_creation() {
