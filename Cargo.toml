@@ -43,7 +43,7 @@ futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"], default-features = false }
 
 # OAuth
-oauth2 = { version = "4", features = ["reqwest"] }
+oauth2 = { version = "5", features = ["reqwest"] }
 hmac = "0.12"
 sha1 = "0.10"
 base64 = "0.22"
