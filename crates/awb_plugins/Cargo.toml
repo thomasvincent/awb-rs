@@ -42,5 +42,5 @@ indexmap = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
-wat = "1.244"
+wat = "1.245"
 tempfile = "3"
