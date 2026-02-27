@@ -1,17 +1,19 @@
 use adw::prelude::*;
-use gtk::glib;
 use gtk::prelude::*;
 use libadwaita as adw;
 
 pub struct LoginDialog {
     dialog: adw::Dialog,
+    #[allow(dead_code)]
     wiki_url_entry: adw::EntryRow,
+    #[allow(dead_code)]
     username_entry: adw::EntryRow,
+    #[allow(dead_code)]
     password_entry: adw::PasswordEntryRow,
 }
 
 impl LoginDialog {
-    pub fn new(parent: &adw::ApplicationWindow) -> Self {
+    pub fn new(_parent: &adw::ApplicationWindow) -> Self {
         // Create preference groups
         let preferences_group = adw::PreferencesGroup::builder()
             .title("Wiki Connection")
@@ -40,8 +42,8 @@ impl LoginDialog {
         // Create the dialog
         let dialog = adw::Dialog::builder()
             .title("Login to Wiki")
-            .content_width(450.0)
-            .content_height(400.0)
+            .content_width(450)
+            .content_height(400)
             .build();
 
         // Create toolbar view for dialog content
@@ -116,14 +118,17 @@ impl LoginDialog {
         self.dialog.present(None::<&adw::ApplicationWindow>);
     }
 
+    #[allow(dead_code)]
     pub fn wiki_url(&self) -> String {
         self.wiki_url_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn username(&self) -> String {
         self.username_entry.text().to_string()
     }
 
+    #[allow(dead_code)]
     pub fn password(&self) -> String {
         self.password_entry.text().to_string()
     }

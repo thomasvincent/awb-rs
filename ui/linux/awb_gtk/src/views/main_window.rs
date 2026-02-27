@@ -13,7 +13,9 @@ pub struct MainWindow {
     _page_list: PageList,
     _editor: EditorView,
     _rule_editor: RuleEditor,
+    #[allow(dead_code)]
     status_label: gtk::Label,
+    #[allow(dead_code)]
     progress_bar: gtk::ProgressBar,
 }
 
@@ -153,21 +155,33 @@ impl MainWindow {
         app.add_action(&login_action);
 
         let quit_action = gio::SimpleAction::new("quit", None);
-        quit_action.connect_activate(glib::clone!(@weak app => move |_, _| {
-            app.quit();
-        }));
+        quit_action.connect_activate(glib::clone!(
+            #[weak]
+            app,
+            move |_, _| {
+                app.quit();
+            }
+        ));
         app.add_action(&quit_action);
 
         let about_action = gio::SimpleAction::new("about", None);
-        about_action.connect_activate(glib::clone!(@weak window => move |_, _| {
-            Self::show_about_dialog(&window);
-        }));
+        about_action.connect_activate(glib::clone!(
+            #[weak]
+            window,
+            move |_, _| {
+                Self::show_about_dialog(&window);
+            }
+        ));
         app.add_action(&about_action);
 
         // Connect login button
-        login_button.connect_clicked(glib::clone!(@weak window => move |_| {
-            Self::show_login_dialog(&window);
-        }));
+        login_button.connect_clicked(glib::clone!(
+            #[weak]
+            window,
+            move |_| {
+                Self::show_login_dialog(&window);
+            }
+        ));
 
         Self {
             window,
@@ -183,10 +197,12 @@ impl MainWindow {
         self.window.present();
     }
 
+    #[allow(dead_code)]
     pub fn set_status(&self, message: &str) {
         self.status_label.set_label(message);
     }
 
+    #[allow(dead_code)]
     pub fn set_progress(&self, fraction: f64) {
         self.progress_bar.set_fraction(fraction);
     }

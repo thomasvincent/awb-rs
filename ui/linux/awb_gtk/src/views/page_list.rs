@@ -1,9 +1,10 @@
 use gtk::prelude::*;
-use gtk::{gio, glib};
 
 pub struct PageList {
     container: gtk::Box,
+    #[allow(dead_code)]
     list_box: gtk::ListBox,
+    #[allow(dead_code)]
     search_entry: gtk::SearchEntry,
 }
 
@@ -57,6 +58,7 @@ impl PageList {
         &self.container
     }
 
+    #[allow(dead_code)]
     pub fn add_page(&self, title: &str) {
         let row = gtk::Label::builder()
             .label(title)
@@ -70,6 +72,7 @@ impl PageList {
         self.list_box.append(&row);
     }
 
+    #[allow(dead_code)]
     pub fn clear_pages(&self) {
         while let Some(child) = self.list_box.first_child() {
             self.list_box.remove(&child);
@@ -78,10 +81,10 @@ impl PageList {
 
     fn filter_list(list_box: &gtk::ListBox, query: &str) {
         if query.is_empty() {
-            list_box.set_filter_func(None::<Box<dyn Fn(&gtk::ListBoxRow) -> bool>>);
+            list_box.unset_filter_func();
         } else {
             let query = query.to_string();
-            list_box.set_filter_func(Some(Box::new(move |row| {
+            list_box.set_filter_func(move |row: &gtk::ListBoxRow| {
                 if let Some(child) = row.child() {
                     if let Ok(label) = child.downcast::<gtk::Label>() {
                         let text = label.text().to_lowercase();
@@ -89,7 +92,7 @@ impl PageList {
                     }
                 }
                 false
-            })));
+            });
         }
     }
 }
