@@ -77,7 +77,7 @@ wasmtime = "41"
 uniffi = { version = "0.28", features = ["cli"] }
 
 # Storage
-toml = "0.8"
+toml = "0.9"
 fs2 = "0.4"
 
 # Logging
